@@ -45,7 +45,9 @@
   // Data problems use 'failed_precondition' so the tracker shows the message without
   // switching to its "you can't save" mode (that is for 'invalid_argument' / 'permission_denied').
   const TABLE_LABEL = { vehicles: 'vehicle', containers: 'container', voyages: 'voyage', customers: 'customer', declarations: 'declaration', carriers: 'carrier', pickups: 'pickup location', rates: 'rate', carrier_drivers: 'driver' };
-  function mapErr(e) {
+  // `sent` = the fields the app tried to save: Postgres hides the offending value in its
+  // message when the table has row-level security, so we name it from what was sent.
+  function mapErr(e, sent) {
     if (!e) return Object.assign(new Error('Unknown error'), { code: 'unknown' });
     const m = String(e.message || e.msg || e.error_description || e);
     const det = String(e.details || '');
@@ -61,8 +63,11 @@
       code = 'failed_precondition';
       const ref = /still referenced from table "(\w+)"/.exec(det);
       const tbl = /not present in table "(\w+)"/.exec(det);
+      const fk = /on table "(\w+)" violates foreign key constraint "(\w+)"/.exec(m);
+      const col = fk ? fk[2].replace(fk[1] + '_', '').replace(/_fkey$/, '') : null;
+      const val = kv ? kv[2] : sent && col && sent[col] != null ? String(sent[col]) : '';
       msg = ref ? `Can't delete: it is still used by ${TABLE_LABEL[ref[1]] || ref[1]} records. Move or remove those first.`
-        : tbl ? `Unknown ${TABLE_LABEL[tbl[1]] || tbl[1]}: ${kv ? kv[2] : ''}`.trim() : 'A linked record does not exist.';
+        : tbl ? `Unknown ${TABLE_LABEL[tbl[1]] || tbl[1]}: ${val}`.trim() : 'A linked record does not exist.';
     }
     else if (c === '23514') { code = 'failed_precondition'; const f = /_(\w+?)_check"/.exec(m); msg = `Value not allowed${f ? ': ' + f[1] : ''}.`; }
     else if (c === '23502') { code = 'failed_precondition'; const f = /column "(\w+)"/.exec(m); msg = `Required${f ? ': ' + f[1] : ''}.`; }
@@ -206,7 +211,7 @@
           return;
         }
         const { error } = await sb.rpc('rec_write', { p_table: m.t, p_id: id, p_data: obj || {}, p_replace: true });
-        if (error) throw mapErr(error);
+        if (error) throw mapErr(error, obj);
       },
       async update(patch) {
         if (k) {
@@ -217,7 +222,7 @@
           return d.set(next);
         }
         const { error } = await sb.rpc('rec_write', { p_table: m.t, p_id: id, p_data: patch || {}, p_replace: false });
-        if (error) throw mapErr(error);
+        if (error) throw mapErr(error, patch);
       },
       async delete() {
         const t = k ? k.t : m.t;

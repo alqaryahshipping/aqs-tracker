@@ -69,6 +69,11 @@ const SB = win.SB;
   // 6. error messages
   nextResult['rpc:rec_write'] = { error: { code: '23503', message: 'violates foreign key', details: 'Key (customer_id)=(NOPE) is not present in table "customers".' } };
   await assert.rejects(db.collection('vehicles').doc('V1').update({ customer_id: 'NOPE' }), (e) => e.code === 'failed_precondition' && e.message === 'Unknown customer: NOPE');
+  // RLS hides the value in Postgres' detail: the adapter names it from what was sent
+  nextResult['rpc:rec_write'] = { error: { code: '23503', message: 'insert or update on table "vehicles" violates foreign key constraint "vehicles_customer_id_fkey"', details: 'Key is not present in table "customers".' } };
+  await assert.rejects(db.collection('vehicles').doc('V1').update({ customer_id: 'ZZNOPE' }), (e) => e.message === 'Unknown customer: ZZNOPE');
+  nextResult['rpc:rec_write'] = { error: { code: '23503', message: 'insert or update on table "containers" violates foreign key constraint "containers_voyage_id_fkey"', details: 'Key is not present in table "voyages".' } };
+  await assert.rejects(db.collection('containers').doc('C1').set({ container: 'C1', voyage_id: 'VYX' }), (e) => e.message === 'Unknown voyage: VYX');
   nextResult['rpc:rec_write'] = { error: { code: '23505', message: 'dup', details: 'Key (lower(btrim(name)))=(abc) already exists.' } };
   await assert.rejects(db.collection('customers').doc('X').set({ name: 'abc' }), (e) => e.code === 'already_exists' && /^Already exists/.test(e.message));
   nextResult['rpc:rec_write'] = { error: { code: '22007', message: 'purchased is not a valid date: 12/10/2026' } };
