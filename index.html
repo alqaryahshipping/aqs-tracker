@@ -1557,9 +1557,9 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const key = [t[0], t[1], histRec(t[0], t[1]).updatedAt || ''].join('|');
     const show = (rows) => {
       const items = histItems(rows);
-      box.replaceChildren(h('h4', { text: 'History' }),
+      box.replaceChildren(...[h('h4', { text: 'History' }),
         items.length ? h('ol', { class: 'vt-hist-l' }, items) : null,
-        rows.some((e) => e.action === 'insert') ? null : h('p', { class: 'vt-note', text: 'Added before 5 Nov 2026, 15:35: history starts when the tracker moved to the new database.' }));
+        rows.some((e) => e.action === 'insert') ? null : h('p', { class: 'vt-note', text: 'Added before 5 Nov 2026, 15:35: history starts when the tracker moved to the new database.' })].filter(Boolean));
     };
     const c = histCache.get(key);
     if (c) return show(c);
