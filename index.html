@@ -3985,9 +3985,16 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   // Same fields as the single "Record payment / release" step (tw_paid, tw_case, tw_gate); each car moves to
   // "Paid · to post" and its 3-working-day clock starts from the paid date.
   function bulkPayDrawer(d) {
-    if (!d.init) { d.init = true; d.sel = new Set(); d.date = TODAY_ISO; d.tcase = 'AQS account'; d.gates = {}; d.q = ''; }
-    const cars = [...S.veh.values()].filter((v) => towStage(v) === 'purchased' && !v.exit_reason && !v.container)
-      .sort((a, b) => String(a.purchased || '').localeCompare(String(b.purchased || '')) || String(a.vin).localeCompare(String(b.vin)));
+    if (!d.init) { d.init = true; d.sel = new Set(); d.date = TODAY_ISO; d.tcase = 'AQS account'; d.gates = {}; d.q = ''; d.sort = ['purchased', 'asc']; }
+    // click a column heading to sort by it; click again to switch ascending / descending
+    const BP_COLS = [['vin', 'VIN', (v) => v.vin], ['vehicle', 'Vehicle', (v) => v.vehicle], ['customer', 'Customer', (v) => vehCustomer(v)], ['buyer', 'Buyer account', (v) => v.buyer],
+      ['lot', 'Lot #', (v) => v.tw_lot], ['purchased', 'Purchased', (v) => v.purchased]];
+    const [sk, sd] = d.sort; const sval = (BP_COLS.find((c) => c[0] === sk) || BP_COLS[5])[2];
+    const cmp = (a, b) => { const x = norm(sval(a)), y = norm(sval(b)); if (!x && y) return 1; if (x && !y) return -1; const r = x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' }); return (sd === 'desc' ? -r : r) || String(a.vin).localeCompare(String(b.vin)); };
+    const cars = [...S.veh.values()].filter((v) => towStage(v) === 'purchased' && !v.exit_reason && !v.container).sort(cmp);
+    const sortTh = ([key, label]) => h('th', { 'aria-sort': sk === key ? (sd === 'asc' ? 'ascending' : 'descending') : 'none', tabindex: '0', title: 'Sort by ' + label,
+      onclick: () => { d.sort = [key, sk === key && sd === 'asc' ? 'desc' : 'asc']; redrawDrawer(); },
+      onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } } }, label);
     const count = h('b', { text: '0' });
     const go = h('button', { class: 'vt-btn is-primary', type: 'button', disabled: true }, 'Record payment');
     const sync = () => {
@@ -4034,7 +4041,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
         h('label', null, 'Who tows', select(TOW_CASES.filter((x) => x[0] !== 'Customer delivers').map((x) => [x[0], x[1]]), d.tcase, (v) => { d.tcase = v; }, 'Who tows', null))),
       cars.length ? h('div', { class: 'vt-tools' }, h('label', { class: 'vt-f is-wide' }, h('span', { text: 'Search' }), search), h('span', { class: 'vt-spacer' }), h('span', { class: 'vt-count' }, count, ` of ${fmtN(cars.length)} selected`)) : null,
       cars.length ? h('div', { class: 'vt-tablebox' }, h('table', { class: 'vt-table vt-bulkpay' },
-        h('thead', null, h('tr', null, h('th', null, all), ...['VIN', 'Vehicle', 'Customer', 'Buyer account', 'Lot #', 'Purchased', 'Gate PIN (optional)'].map((x) => h('th', { text: x })))),
+        h('thead', null, h('tr', null, h('th', null, all), ...BP_COLS.map(sortTh), h('th', { text: 'Gate PIN (optional)' }))),
         h('tbody', null, rowEls.map((r) => r.tr))))
         : h('div', { class: 'vt-empty' }, h('b', { text: 'No cars waiting for payment' }), h('p', { text: 'Every purchased car already has its auction payment recorded.' })),
       msgEl(d),
