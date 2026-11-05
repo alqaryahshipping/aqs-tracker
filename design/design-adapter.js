@@ -247,7 +247,9 @@
     async bootstrap() { return SB.refresh(); },
   };
   window.SB = SB;
-  window.AQS_RT = window.claude = {
+  // claude.ai owns (and locks) window.claude on this page, so the design copy is reached as window.AQS_RT
+  // (design/build.py points the tracker's calls there). Never assign window.claude here.
+  window.AQS_RT = {
     use: async (name) => {
       if (name === 'db') { await SB.whenSignedIn(); return db; }
       if (name === 'user') { await SB.whenSignedIn(); return { can: async () => true, canEdit: async () => ME.role === 'owner', id: async () => ME.user_id }; }
@@ -276,5 +278,10 @@
     const rb = el.querySelector('#dc-reset'); let armed = false;
     rb.onclick = () => { if (!armed) { armed = true; rb.classList.add('is-armed'); rb.textContent = 'Click again: discard my edits'; return; } safe(() => localStorage.removeItem(STORE_KEY)); location.reload(); };
   }
-  ready.then(() => { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bar); else bar(); });
+  const whenDom = (f) => { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', f); else f(); };
+  ready.then(() => whenDom(bar), (e) => whenDom(() => {
+    // the data copy could not be read: say so plainly instead of leaving the page empty
+    bar(); const n = document.getElementById('dc-note');
+    if (n) n.textContent = 'Could not load the data copy (' + (e && e.message ? e.message : e) + ').';
+  }));
 })();
