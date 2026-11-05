@@ -2072,8 +2072,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
         items: () => cons.filter((c) => c.status === 'Planned' && ahead(parseD(c.etd)) != null && ahead(parseD(c.etd)) <= th('empty') && !carsIn(c.container).length).map((c) => cItem(c, `ETD ${fmtD(c.etd)}`, -ahead(parseD(c.etd)))) },
       { id: 'X1', grp: 'Full / mix containers', sev: 'urgent', title: 'Full container holds cars of more than one customer', fix: 'A full container takes one customer. Take out the other customer\'s cars, or set the container to Mix and pick the common consignee.',
         items: () => openCon.filter((c) => c.loadType !== 'Mix' && c.loadType !== 'Group').map((c) => { const ids = new Set(conCars(c).map((v) => carCus(c, v)).filter(Boolean)); return ids.size > 1 ? cItem(c, `Customers: ${[...ids].map((x) => cusName(x) || x).join(', ')}`, null) : null; }).filter(Boolean) },
-      { id: 'X2', grp: 'Full / mix containers', sev: 'urgent', title: 'Mix container: consignee has no car in it', fix: 'Open the container and pick the common consignee from the customers whose cars are in it.',
-        items: () => openCon.filter((c) => c.loadType === 'Mix' && conCars(c).length && !conCars(c).some((v) => v.customer_id === c.customer_id)).map((c) => cItem(c, `Consignee ${c.customer || 'not set'} · customers: ${[...new Set(conCars(c).map((v) => vehCustomer(v)).filter(Boolean))].join(', ')}`, null)) },
+      { id: 'X2', grp: 'Full / mix containers', sev: 'urgent', title: 'Mix container: consignee is not a group company', fix: 'Open the container and choose one of the group companies as consignee (or mark the customer as a group company in Customers).',
+        items: () => openCon.filter((c) => c.loadType === 'Mix' && !isGroupCus(c.customer_id)).map((c) => cItem(c, `Consignee ${c.customer || 'not set'}`, null)) },
       { id: 'X3', grp: 'Full / mix containers', sev: 'data', title: 'Mix container: car without its own customer', fix: 'Open the car and set its customer. In a mix container every car needs its own customer.',
         items: () => openCon.filter((c) => c.loadType === 'Mix').flatMap((c) => conCars(c).filter((v) => !v.customer_id).map((v) => vItem(v, `In mix container ${c.container}`, null))) },
       { id: 'X5', grp: 'Full / mix containers', sev: 'urgent', title: 'Group container holds a car of a non-group customer', fix: 'Take the car out, or mark its customer as a group company in Customers ("Group company (internal)" = Yes).',
@@ -4384,7 +4384,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   }
 
   // --- full / mix choice + common consignee for mix
-  const LOADS = [['Full', 'Full container', 'One customer: every car belongs to the container\'s customer'], ['Mix', 'Mix container', 'Several customers\' cars; pick one common consignee from them'],
+  const LOADS = [['Full', 'Full container', 'One customer: every car belongs to the container\'s customer'], ['Mix', 'Mix container', 'Several customers\' cars; the consignee is one of our group companies'],
     ['Group', 'Group container', 'Cars of our group companies; the consignee can be any group company']];
   function loadPicker(d, ro) {
     return h('div', { class: 'vt-loadpick', role: 'radiogroup', 'aria-label': 'Full or mix container', 'data-key': 'load', 'data-label': 'Full or mix container' },
@@ -4413,7 +4413,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   }
 
   // Group container: the consignee can be any group company, whether or not it has a car in the container
-  function groupConsigneePicker(d, ro) {
+  function groupConsigneePicker(d, ro, mix) {
     const ids = groupCusIds();
     const opts = ids.map((id) => [id, cusName(id) || id]);
     if (d.form.customer_id && !ids.includes(d.form.customer_id)) opts.push([d.form.customer_id, `${cusName(d.form.customer_id) || d.form.customer_id} (not a group company)`]);
@@ -4422,7 +4422,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
       h('label', { class: 'vt-f', style: { maxWidth: 'none', flex: 'none' }, 'data-key': 'customer_id', 'data-label': 'Consignee (group company)' }, h('span', { text: 'Consignee (group company) *' }), sel),
       h('p', { class: 'vt-note', text: ids.length
-        ? `Group companies: ${ids.map((id) => cusName(id) || id).join(', ')}. Cars of any of them can go in this container, and the consignee can be any of them.`
+        ? (mix ? `Mix container: cars of any customers; the consignee must be a group company (${ids.map((id) => cusName(id) || id).join(', ')}).`
+          : `Group companies: ${ids.map((id) => cusName(id) || id).join(', ')}. Cars of any of them can go in this container, and the consignee can be any of them.`)
         : 'No customer is marked as a group company yet. Open Customers and set "Group company (internal)" to Yes on each group company.' }));
   }
 
@@ -4451,9 +4452,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
         const outside = carsAll.filter((v) => !isGroupCus(v.customer_id));
         if (outside.length) return setMsg(d, `Group container takes group companies' cars only. ${outside.length} car(s) belong to ${[...new Set(outside.map((v) => vehCustomer(v) || 'no customer'))].join(', ')} (${outside.slice(0, 3).map((v) => v.vin).join(', ')}${outside.length > 3 ? '…' : ''}). Remove them or make it a Mix container.`, true);
       } else if (data.load === 'Mix') {
-        const ids = mixCusIds(d, rec);
-        if (!ids.length) return setMsg(d, 'Mix container: pick its cars first; the common consignee is chosen from their customers.', true, { customer_id: 'Pick cars first' });
-        if (!data.customer_id || !ids.includes(data.customer_id)) return setMsg(d, `Common consignee: choose one of ${ids.map((id) => cusName(id) || id).join(', ')}.`, true, { customer_id: 'Choose one of the customers in this container' });
+        if (!groupCusIds().length) return setMsg(d, 'Mix container: the consignee must be a group company, but no customer is marked as one yet. Set "Group company (internal)" to Yes in Customers first.', true, { customer_id: 'No group companies set up' });
+        if (!data.customer_id || !isGroupCus(data.customer_id)) return setMsg(d, 'Consignee: a mix container is consigned to one of the group companies. Choose one.', true, { customer_id: 'Choose a group company' });
       } else {
         if (!data.customer_id || data.customer_id === UNASSIGNED) missing.push('Customer (a real customer, not Unassigned)');
         const other = carsAll.filter((v) => v.customer_id && v.customer_id !== data.customer_id);
@@ -4507,7 +4507,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
           } }), h('div', null, h('button', { class: 'vt-btn is-sm', type: 'button', onclick: () => { d.showPick = false; d.pk = null; redrawDrawer(); } }, 'Cancel')))
           : h('div', null, h('button', { class: 'vt-btn', type: 'button', onclick: () => { d.showPick = true; redrawDrawer(); } }, '+ Add cars with ready titles'))) : null);
     } else if (S.canWrite && d.form.load) {
-      carsBox = h('div', { class: 'vt-sublist' }, h('h4', { text: isMix ? 'Pick the cars (required for a mix container)' : isGroup ? 'Add group companies\' cars now (optional)' : 'Add cars now (optional)' }),
+      carsBox = h('div', { class: 'vt-sublist' }, h('h4', { text: isMix ? 'Add cars now (optional, any customer)' : isGroup ? 'Add group companies\' cars now (optional)' : 'Add cars now (optional)' }),
         h('p', { class: 'vt-note', text: 'Tick cars with ready titles to load them into this container when you click Add. They leave the warehouse board, marked "Loaded".' }),
         carPicker(d, { shipper: d.form.shipper, customer: isMix || isGroup ? null : d.form.customer_id, mix: isMix, group: isGroup, onChange: () => { if (isMix && d.refreshCons) d.refreshCons(); } }));
     }
@@ -4525,7 +4525,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
         transitDays(rec) != null ? h('span', { class: 'vt-transit-d' + (transitDays(rec) < 0 ? ' is-bad' : ''), text: `Transit ${transitDays(rec)} days` }) : h('span', { class: 'vt-muted', text: 'Transit: ETD or ETA missing on the voyage' })) : null,
       voyagePicker(d, ro),
       loadPicker(d, ro),
-      !d.form.load ? h('p', { class: 'vt-note', text: 'Full = one customer per container. Mix = several customers\' cars with one common consignee. Group = our group companies\' cars, consigned to any group company.' }) : isGroup ? groupConsigneePicker(d, ro) : isMix ? consigneePicker(d, ro, rec) : customerPicker(d, ro),
+      !d.form.load ? h('p', { class: 'vt-note', text: 'Full = one customer per container. Mix = several customers\' cars, consigned to one of our group companies. Group = our group companies\' cars only, consigned to any group company.' }) : isGroup || isMix ? groupConsigneePicker(d, ro, isMix) : customerPicker(d, ro),
       formFor(CON_FIELDS, d, ro, isNew),
       carsBox, msgEl(d),
     ], ro ? null : [rec && S.canWrite ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete container') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', onclick: save }, isNew ? 'Add container' : 'Save changes')], true);
