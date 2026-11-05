@@ -55,6 +55,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
 .vt-mebtn { gap: 6px; } .vt-mebtn svg { width: 16px; height: 16px; } .vt-mebtn[data-arm] { color: var(--bad); border-color: var(--bad); }
 .vt-adduser { margin-top: 12px; align-items: end; }
 .vt-robanner { margin: 12px 20px 0; padding: 10px 14px; border: 1px solid #f59f00; background: color-mix(in srgb, #f59f00 12%, var(--panel)); border-radius: 10px; font-size: 13.5px; font-weight: 600; }
+/* 'hidden' must always hide (claude.ai added this rule itself; the stand-alone site needs it, or styled tabs and buttons such as Rates and Export stay visible to Staff) */
+[hidden]:not([hidden=until-found i]) { display: none !important; }
 .vt-robanner[hidden] { display: none; }
 .vt-tabsep { flex: none; width: 1px; align-self: center; height: 18px; background: var(--line); margin: 0 6px; }
 .vt-topact { display: flex; gap: 10px; align-items: center; justify-content: flex-end; }
@@ -177,6 +179,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
 .vt-card { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 5px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); width: 100%; }
 .vt-card:hover { border-color: var(--muted); }
 .vt-card.is-picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.vt-card.is-late { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); background: color-mix(in srgb, var(--bad) 6%, var(--panel)); }
+.vt-meta.is-bad { color: var(--bad); font-weight: 600; }
 .vt-cardtop { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
 .vt-cardtop b { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vt-cardtop strong { font-family: var(--serif); font-weight: 400; font-size: 18px; line-height: 1; }
@@ -765,6 +769,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       <button class="vt-tab" role="tab" data-tab="clearance" id="tab-clearance">Clearance<b id="n-clr"></b></button>
       <span class="vt-tabsep" aria-hidden="true"></span>
       <button class="vt-tab" role="tab" data-tab="onhand" id="tab-onhand">On-hand<span class="is-long"> board</span></button>
+      <button class="vt-tab" role="tab" data-tab="towboard" id="tab-towboard">Towing<span class="is-long"> board</span></button>
       <button class="vt-tab" role="tab" data-tab="shipments" id="tab-shipments">Shipments<span class="is-long"> board</span></button>
       <button class="vt-tab" role="tab" data-tab="rates" id="tab-rates" hidden>Rates</button>
       <span class="vt-tabsep" aria-hidden="true"></span>
@@ -1181,7 +1186,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   // ---------- render root ----------
   let renderQueued = false;
   // ---------- phone layout helpers ----------
-  const MORE_TABS = [['containers', 'Containers', 'n-con'], ['voyages', 'Voyages', 'n-voy'], ['clearance', 'Clearance', 'n-clr'], ['onhand', 'On-hand board'], ['shipments', 'Shipments board'], ['rates', 'Freight rates'], ['customers', 'Customers', 'n-cus'], ['settings', 'Settings']];
+  const MORE_TABS = [['containers', 'Containers', 'n-con'], ['voyages', 'Voyages', 'n-voy'], ['clearance', 'Clearance', 'n-clr'], ['onhand', 'On-hand board'], ['towboard', 'Towing board'], ['shipments', 'Shipments board'], ['rates', 'Freight rates'], ['customers', 'Customers', 'n-cus'], ['settings', 'Settings']];
   const isPhone = () => window.matchMedia('(max-width: 760px)').matches;
   function drawMobileNav() {
     const nav = $('#mnav'); if (!nav) return;
@@ -1196,7 +1201,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const list = $('#msheetList'); const sh = $('#msheet');
     const nd = Object.keys(drafts || {}).length;
     const item = (label, sub, onclick, cur, wide) => h('button', { type: 'button', class: wide ? 'is-wide' : '', 'aria-current': cur ? 'page' : null, onclick: () => { closeMore(); onclick(); } }, h('span', { text: label }), sub ? h('small', { text: sub }) : null);
-    list.replaceChildren(...[...MORE_TABS.filter(([t]) => !['rates', 'onhand', 'shipments'].includes(t) || S.canAdmin).map(([t, label, nid]) => item(label, nid ? (document.getElementById(nid) || {}).textContent || '' : '', () => go(t), S.tab === t)),
+    list.replaceChildren(...[...MORE_TABS.filter(([t]) => t !== 'rates' || S.canAdmin).map(([t, label, nid]) => item(label, nid ? (document.getElementById(nid) || {}).textContent || '' : '', () => go(t), S.tab === t)),
       nd && S.canWrite ? item('Drafts', String(nd), () => { S.drawer = { mode: 'drafts' }; render(); }, false) : null,
       S.canWrite ? item('Bulk entry', '', () => openPaste('veh'), S.tab === 'bulk') : null,
       S.canAdmin ? item('Export to Excel', '', () => $('#exportBtn').click(), false, true) : null].filter(Boolean));
@@ -1205,7 +1210,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   }
   function closeMore() { const sh = $('#msheet'); if (sh) sh.hidden = true; }
   const mfOpen = {};
-  const M_TITLES = { onhand: 'On-hand board', shipments: 'Shipments board', voyages: 'Voyages', settings: 'Settings' };
+  const M_TITLES = { onhand: 'On-hand board', towboard: 'Towing board', shipments: 'Shipments board', voyages: 'Voyages', settings: 'Settings' };
   // ---------- "Clear all filters" on every list page ----------
   function filterDefs() {
     return {
@@ -1690,8 +1695,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     S.lastTab = S.tab;
     if (S.lastTab2 === 'rates' && S.tab !== 'rates') { captureRateDraft(); S.rateEl = null; }
     S.lastTab2 = S.tab;
-    // reporting sections (boards, rates, Excel export): owners / editors only. Working modules: anyone who can open and use the page.
-    const REPORT_TABS = ['onhand', 'shipments', 'rates'];
+    // Owner-only sections: Rates (and Excel export). The boards are open to everyone (Idres, 5 Nov 2026).
+    const REPORT_TABS = ['rates'];
     if (S.permDone && !S.canAdmin && REPORT_TABS.includes(S.tab)) { S.tab = 'vehicles'; history.replaceState(null, '', '#vehicles'); }
     for (const t of REPORT_TABS) { const b = $('#tab-' + t); if (b) b.hidden = !S.canAdmin; }
     { const xb = $('#exportBtn'); if (xb) xb.hidden = !S.canAdmin; }
@@ -1699,7 +1704,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     let view;
     if (!S.db) view = h('div', { class: 'vt-notice', text: S.dbMissing ? 'Sign in to see the tracker.' : 'Loading…' });
     else if (!S.ready.v || !S.ready.c || !S.ready.y || !S.ready.u) view = h('div', { class: 'vt-notice', text: 'Loading vehicles, containers, voyages and customers…' });
-    else view = ({ vehicles: viewVehicles, containers: viewContainers, voyages: viewVoyages, clearance: viewClearance, customers: viewCustomers, onhand: viewOnHand, shipments: viewShipments, settings: viewSettings, bulk: viewBulk, rates: viewRates, inbox: viewInbox, titles: viewTitles, towing: viewTowing })[S.tab]();
+    else view = ({ vehicles: viewVehicles, containers: viewContainers, voyages: viewVoyages, clearance: viewClearance, customers: viewCustomers, onhand: viewOnHand, shipments: viewShipments, towboard: viewTowBoard, settings: viewSettings, bulk: viewBulk, rates: viewRates, inbox: viewInbox, titles: viewTitles, towing: viewTowing })[S.tab]();
     main.replaceChildren(...[].concat(view).filter((x) => x != null));
     main.dataset.tab = S.tab;
     if (!sameTab) window.scrollTo(0, 0);
@@ -3295,6 +3300,92 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   }
 
   // ---------- Shipments board ----------
+  // ---------- Towing board: Pending / Picked / Delivered, grouped by customer, with ageing (calendar days) ----------
+  // Pending = purchased or paid, not picked up (days from paid date, else purchase date) · late after 3 days
+  // Picked = picked up, not delivered (days from pickup) · late after 2 days
+  // Delivered = delivered to the yard, carrier not paid yet (days since delivery) · no highlight
+  const TB_COLS = [
+    { id: 'pending', label: 'Pending pickup', stages: ['purchased', 'pending', 'posted', 'assigned'], from: (v) => v.tw_paid || v.purchased || (v.createdAt ? String(v.createdAt).slice(0, 10) : ''), fromLabel: (v) => v.tw_paid ? 'paid' : 'purchased', late: 3, sev: 'var(--bad)', hint: 'purchased or paid, not picked up · late after 3 days' },
+    { id: 'picked', label: 'Picked up', stages: ['picked'], from: (v) => v.tw_picked, fromLabel: () => 'picked up', late: 2, sev: 'var(--warn)', hint: 'on the truck, not delivered · late after 2 days' },
+    { id: 'delivered', label: 'Delivered · carrier not paid', stages: ['delivered'], from: (v) => v.arrived, fromLabel: () => 'delivered', late: null, sev: 'var(--ok)', hint: 'at the loading yard; pay the carrier' },
+  ];
+  const calDays = (s) => { const t = parseD(s); return isNaN(t) ? null : Math.max(0, Math.floor((TODAY - t) / DAY)); };
+  function viewTowBoard() {
+    S.tbf = S.tbf || { q: '', customer: '', shipper: '', carrier: '', pick: null };
+    const f = S.tbf;
+    const q = f.q.trim().toLowerCase();
+    const base = [...S.veh.values()].filter((v) => !v.container && isOnHand(v) && !(towStage(v) === 'delivered' && v.tw_src));
+    const pre = base.filter((v) => (!f.customer || cusIdOf(v) === f.customer) && (!f.shipper || (v.shipper || '__none') === f.shipper) && (!f.carrier || (norm(v.tw_carrier) || '__none') === f.carrier)
+      && (!q || [v.vin, v.vehicle, v.tw_lot, v.buyer, v.tw_pickup, v.tw_carrier, v.tw_driver, vehCustomer(v)].some((x) => norm(x).toLowerCase().includes(q))));
+    const colOf = (v) => { const st = towStage(v); return TB_COLS.find((c) => c.stages.includes(st)) || null; };
+    const daysOf = (v, c) => calDays(c.from(v));
+    const isLate = (v, c) => c.late != null && (daysOf(v, c) ?? 0) > c.late;
+    const byCol = new Map(TB_COLS.map((c) => [c.id, []]));
+    for (const v of pre) { const c = colOf(v); if (c) byCol.get(c.id).push(v); }
+    const set = (k) => (val) => { f[k] = val; f.pick = null; render(); };
+    const lateN = (c) => byCol.get(c.id).filter((v) => isLate(v, c)).length;
+    const kpis = h('div', { class: 'vt-kpis vt-kpis-6' },
+      kpi('Pending pickup', fmtN(byCol.get('pending').length), { dot: 'var(--bad)', hint: 'purchased or paid, not picked up' }),
+      kpi('Pending > 3 days', fmtN(lateN(TB_COLS[0])), { dot: 'var(--bad)', bad: !!lateN(TB_COLS[0]), hint: 'not picked up in time' }),
+      kpi('Picked up', fmtN(byCol.get('picked').length), { dot: 'var(--warn)', hint: 'on the truck' }),
+      kpi('Picked > 2 days', fmtN(lateN(TB_COLS[1])), { dot: 'var(--warn)', bad: !!lateN(TB_COLS[1]), hint: 'not delivered in time' }),
+      kpi('Delivered · carrier not paid', fmtN(byCol.get('delivered').length), { dot: 'var(--ok)', hint: `towing cost ${fmtN(byCol.get('delivered').reduce((a, v) => a + (Number(v.tw_inv_amt) || Number(v.tw_price) || 0), 0))} USD` }));
+    const cusOptsTB = [...new Map(base.map((v) => [cusIdOf(v), vehCustomer(v)]).filter(([k]) => k)).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+    const carrOptsTB = [...new Set(base.map((v) => norm(v.tw_carrier)).filter(Boolean))].sort().map((n) => [n, n]);
+    const tools = h('div', { class: 'vt-tools' },
+      searchBox('Search towing board', 'VIN, lot, vehicle, customer, carrier, pickup location', f.q, set('q')),
+      field('Customer', select(cusOptsTB, f.customer, set('customer'), 'Towing board customer filter', 'All customers')),
+      field('Loader', select([...L('shippers').map((s) => [s, s]), ['__none', 'Not set']], f.shipper, set('shipper'), 'Towing board loader filter', 'All loaders')),
+      field('Carrier', select([...carrOptsTB, ['__none', 'No carrier yet']], f.carrier, set('carrier'), 'Towing board carrier filter', 'All carriers')));
+    const board = h('div', { class: 'vt-board', style: { gridAutoColumns: 'minmax(15rem, 1fr)' } }, TB_COLS.map((c) => {
+      const cr = byCol.get(c.id);
+      const groups = [...group(cr, (v) => cusIdOf(v) || '__none')].map(([cid, vs]) => {
+        const late = c.late != null ? vs.filter((v) => isLate(v, c)).length : 0;
+        const ds = vs.map((v) => daysOf(v, c)).filter((x) => x != null);
+        return { cid, vs, late, oldest: ds.length ? Math.max(...ds) : null, avg: ds.length ? Math.round(ds.reduce((a, b) => a + b, 0) / ds.length) : null };
+      }).sort((a, z) => z.late - a.late || (z.oldest ?? -1) - (a.oldest ?? -1) || z.vs.length - a.vs.length);
+      const pickAll = c.id + '|*';
+      return h('div', { class: 'vt-col', style: { '--sev': c.sev } },
+        h('button', { class: 'vt-colhead', type: 'button', 'aria-label': `List all cars: ${c.label}`, onclick: () => { f.pick = f.pick === pickAll ? null : pickAll; render(); } },
+          h('div', { class: 'vt-colrow' }, h('span', { class: 'vt-colname', text: c.label }), h('span', { class: 'vt-colnum', text: fmtN(cr.length) })),
+          h('div', { class: 'vt-sub', text: c.late != null ? `${fmtN(lateN(c))} late · ${c.hint}` : c.hint })),
+        h('div', { class: 'vt-cards' }, groups.length ? groups.map((g) => {
+          const key = c.id + '|' + g.cid;
+          return h('button', { class: 'vt-card' + (g.late ? ' is-late' : '') + (f.pick === key ? ' is-picked' : ''), type: 'button', 'aria-label': `${cusName(g.cid) || 'No customer'}, ${g.vs.length} cars, ${c.label}`, onclick: () => { f.pick = f.pick === key ? null : key; render(); } },
+            h('div', { class: 'vt-cardtop' }, h('b', { text: g.cid === '__none' ? 'No customer' : cusName(g.cid) || g.cid }), h('strong', { text: fmtN(g.vs.length) })),
+            c.late != null ? h('div', { class: 'vt-meta is-strong' + (g.late ? ' is-bad' : ''), text: g.late ? `${fmtN(g.late)} late (> ${c.late} days)` : 'none late' }) : null,
+            h('div', { class: 'vt-meta', text: g.oldest == null ? 'dates missing' : `oldest ${g.oldest} d · avg ${g.avg} d` }));
+        }) : h('div', { class: 'vt-empty', text: 'No cars' })));
+    }));
+    let list = null;
+    if (f.pick) {
+      const [cid0, gid] = f.pick.split('|'); const c = TB_COLS.find((x) => x.id === cid0);
+      const rows = (byCol.get(cid0) || []).filter((v) => gid === '*' || (cusIdOf(v) || '__none') === gid).sort((a, b) => (daysOf(b, c) ?? -1) - (daysOf(a, c) ?? -1));
+      const title = `${c.label}${gid === '*' ? '' : ' · ' + (gid === '__none' ? 'No customer' : cusName(gid) || gid)}`;
+      list = h('div', { class: 'vt-card-box' },
+        h('div', { class: 'vt-boxhead' }, h('h2', { text: title }), h('span', { class: 'vt-count', text: `${fmtN(rows.length)} cars · oldest first · click a car to work on its towing` }),
+          h('button', { class: 'vt-btn', type: 'button', onclick: () => { f.pick = null; render(); } }, 'Close list')),
+        ...table([
+          { key: 'vin', label: 'VIN', mono: true, copy: true },
+          { key: 'tw_lot', label: 'Lot #', mono: true, copy: true, render: (r) => r.tw_lot || h('span', { class: 'vt-muted', text: '—' }) },
+          { key: 'vehicle', label: 'Vehicle' },
+          { key: 'customer', label: 'Customer', render: (r) => vehCustomer(r) },
+          { key: 'days', label: 'Days', num: true, render: (r) => { const n = daysOf(r, c); return n == null ? '' : `${n} d`; }, cls: (r) => isLate(r, c) ? 'is-old' : '' },
+          { key: 'since', label: 'Counting from', render: (r) => { const d0 = c.from(r); return d0 ? `${c.fromLabel(r)} ${fmtD(d0)}` : h('span', { class: 'vt-muted', text: 'no date' }); } },
+          { key: 'stage', label: 'Towing stage', render: (r) => towPill(r) },
+          { key: 'tw_pickup', label: 'Pickup location' },
+          { key: 'yard', label: 'Loader · yard', render: (r) => [r.shipper, r.yard].filter(Boolean).join(' · ') },
+          { key: 'tw_carrier', label: 'Carrier / driver', render: (r) => [r.tw_carrier, r.tw_driver].filter(Boolean).join(' · ') },
+        ], rows, { onRow: (r) => { S.drawer = { mode: 'tow', id: r.id }; render(); }, keyOf: (r) => r.id }));
+    }
+    return [
+      h('div', { class: 'vt-pagehead' }, h('div', null, h('h2', { text: 'Towing board' }),
+        h('p', { class: 'vt-note', text: 'Every car still being towed, by stage and customer. Days are calendar days: pending counts from the paid date (or the purchase date if payment is not recorded), picked from the pickup date, delivered from the delivery date. Pending over 3 days and picked over 2 days are red. Click a card to list its cars.' }))),
+      kpis, tools,
+      h('div', { class: 'vt-card-box', id: 'tow-board' }, h('div', { class: 'vt-scroll' }, board)),
+      list,
+    ];
+  }
   function viewShipments() {
     const f = S.sf; const all = [...S.con.values()].filter((c) => !isNaN(parseD(c.eta)));
     const ws = Number(P().weekStart); const we = (ws + 6) % 7;
@@ -5429,7 +5520,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   });
 
   // ---------- tabs & routing ----------
-  const TABS = ['inbox', 'vehicles', 'towing', 'titles', 'containers', 'voyages', 'clearance', 'onhand', 'shipments', 'rates', 'customers', 'settings', 'bulk'];
+  const TABS = ['inbox', 'vehicles', 'towing', 'titles', 'containers', 'voyages', 'clearance', 'onhand', 'towboard', 'shipments', 'rates', 'customers', 'settings', 'bulk'];
   function go(tab) { if (!TABS.includes(tab)) tab = P().tab || 'onhand'; if (S.tab !== tab) { S.tab = tab; if (tab === 'shipments') S.scrollNow = true; } if (location.hash.slice(1) !== tab) history.replaceState(null, '', '#' + tab); render(); }
   document.querySelectorAll('.vt-tab').forEach((t) => t.addEventListener('click', () => go(t.dataset.tab)));
   { const sb = document.getElementById('setBtn'); if (sb) sb.addEventListener('click', () => go('settings')); }
