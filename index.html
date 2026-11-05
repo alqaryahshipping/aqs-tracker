@@ -142,6 +142,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
 .vt-hist-c { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .vt-hist-c s { color: var(--muted); } .vt-hist-f { color: var(--muted); }
 .vt-del td:last-child { white-space: nowrap; }
+.vt-bulkpay td:first-child, .vt-bulkpay th:first-child { width: 1%; } .vt-bulkpay input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); } .vt-bulkpay .vt-inline { max-width: 9rem; }
 .vt-del-detail td { background: var(--panel-2); cursor: default; white-space: normal; max-width: none; }
 .vt-del-dl { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: 3px 14px; margin: 4px 0; font-size: 12.5px; }
 .vt-del-dl dt { color: var(--muted); } .vt-del-dl dd { margin: 0; overflow-wrap: anywhere; }
@@ -294,7 +295,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
 .vt-rmk{position:relative;display:inline-flex;color:var(--accent);cursor:help;border-radius:4px;outline-offset:2px}
 .vt-tip{position:fixed;z-index:9999;max-width:300px;white-space:pre-wrap;font-size:12px;line-height:1.4;padding:8px 10px;border-radius:8px;background:var(--fg);color:var(--panel);box-shadow:0 6px 20px rgba(0,0,0,.2);pointer-events:none}
 .vt-loadpick{display:flex;flex-direction:column;gap:6px}.vt-loadpick-l{font-size:12px;color:var(--muted);font-weight:600}
-.vt-loadpick-o{display:grid;grid-template-columns:1fr 1fr;gap:8px}@media(max-width:560px){.vt-loadpick-o{grid-template-columns:1fr}}
+.vt-loadpick-o{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}@media(max-width:760px){.vt-loadpick-o{grid-template-columns:1fr}}
 .vt-loadopt{display:grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--panel)}
 .vt-loadopt small{grid-column:2;color:var(--muted);font-size:12px;line-height:1.35}.vt-loadopt.is-on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}.vt-loadopt.is-ro{cursor:default;opacity:.8}
 .vt-loadpick.is-invalid .vt-loadopt{border-color:var(--bad)}
@@ -2070,15 +2071,17 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       { id: 'A6', grp: 'Shipment flow', sev: 'today', title: `No cars loaded, voyage sails within ${th('empty')} days`, fix: 'Add ready cars to the container, or cancel the booking.',
         items: () => cons.filter((c) => c.status === 'Planned' && ahead(parseD(c.etd)) != null && ahead(parseD(c.etd)) <= th('empty') && !carsIn(c.container).length).map((c) => cItem(c, `ETD ${fmtD(c.etd)}`, -ahead(parseD(c.etd)))) },
       { id: 'X1', grp: 'Full / mix containers', sev: 'urgent', title: 'Full container holds cars of more than one customer', fix: 'A full container takes one customer. Take out the other customer\'s cars, or set the container to Mix and pick the common consignee.',
-        items: () => openCon.filter((c) => c.loadType !== 'Mix').map((c) => { const ids = new Set(conCars(c).map((v) => carCus(c, v)).filter(Boolean)); return ids.size > 1 ? cItem(c, `Customers: ${[...ids].map((x) => cusName(x) || x).join(', ')}`, null) : null; }).filter(Boolean) },
+        items: () => openCon.filter((c) => c.loadType !== 'Mix' && c.loadType !== 'Group').map((c) => { const ids = new Set(conCars(c).map((v) => carCus(c, v)).filter(Boolean)); return ids.size > 1 ? cItem(c, `Customers: ${[...ids].map((x) => cusName(x) || x).join(', ')}`, null) : null; }).filter(Boolean) },
       { id: 'X2', grp: 'Full / mix containers', sev: 'urgent', title: 'Mix container: consignee has no car in it', fix: 'Open the container and pick the common consignee from the customers whose cars are in it.',
         items: () => openCon.filter((c) => c.loadType === 'Mix' && conCars(c).length && !conCars(c).some((v) => v.customer_id === c.customer_id)).map((c) => cItem(c, `Consignee ${c.customer || 'not set'} · customers: ${[...new Set(conCars(c).map((v) => vehCustomer(v)).filter(Boolean))].join(', ')}`, null)) },
       { id: 'X3', grp: 'Full / mix containers', sev: 'data', title: 'Mix container: car without its own customer', fix: 'Open the car and set its customer. In a mix container every car needs its own customer.',
         items: () => openCon.filter((c) => c.loadType === 'Mix').flatMap((c) => conCars(c).filter((v) => !v.customer_id).map((v) => vItem(v, `In mix container ${c.container}`, null))) },
+      { id: 'X5', grp: 'Full / mix containers', sev: 'urgent', title: 'Group container holds a car of a non-group customer', fix: 'Take the car out, or mark its customer as a group company in Customers ("Group company (internal)" = Yes).',
+        items: () => openCon.filter((c) => c.loadType === 'Group').flatMap((c) => conCars(c).filter((v) => !isGroupCus(v.customer_id)).map((v) => vItem(v, `In group container ${c.container} · customer ${vehCustomer(v) || 'not set'}`, null))) },
       { id: 'X4', grp: 'Full / mix containers', sev: 'data', title: 'Pending container: Full or Mix not confirmed', fix: 'Open the container and confirm Full (one customer) or Mix (several customers, one consignee).',
         items: () => pendCon.filter((c) => !c.load).map((c) => cItem(c, `ETD ${fmtD(c.etd) || '—'} · ${conCars(c).length} car(s)`, null)) },
       { id: 'B5', grp: 'Vehicles in yard', sev: 'today', title: 'Ready to load, no pending container for its loader and customer', fix: 'Book a container for this loader and customer, or add the car to a mix container of the same loader.',
-        items: () => yard.filter((v) => isReady(v) && v.customer_id && !pendCon.some((c) => c.shipper === v.shipper && (c.loadType === 'Mix' || c.customer_id === v.customer_id || c.customer_id === UNASSIGNED))).map((v) => vItem(v, `${v.shipper || 'no loader'} · ${vehCustomer(v)} · ${daysIn(v) ?? '?'} days at yard`, daysIn(v))) },
+        items: () => yard.filter((v) => isReady(v) && v.customer_id && !pendCon.some((c) => c.shipper === v.shipper && (c.loadType === 'Mix' || (c.loadType === 'Group' && isGroupCus(v.customer_id)) || c.customer_id === v.customer_id || c.customer_id === UNASSIGNED))).map((v) => vItem(v, `${v.shipper || 'no loader'} · ${vehCustomer(v)} · ${daysIn(v) ?? '?'} days at yard`, daysIn(v))) },
       { id: 'P1', grp: 'Purchase', sev: 'today', title: 'Purchased: auction payment / release not recorded', fix: 'Pay the auction or confirm the release, then record it on the car (step "Record payment / release"). The 3-working-day pickup clock starts from that date.',
         items: () => yard.filter((v) => towStage(v) === 'purchased').map((v) => { const dd = ago(parseD(v.purchased || String(v.createdAt || '').slice(0, 10))); return vItem(v, `Bought ${fmtD(v.purchased) || '—'}${v.buyer ? ' · ' + v.buyer : ''}${v.tw_lot ? ' · lot ' + v.tw_lot : ''}`, dd); }) },
       { id: 'P2', grp: 'Purchase', sev: 'today', title: 'Car record incomplete for its stage', fix: 'Open the car and fill the missing fields. Each step needs the data of the steps before it.',
@@ -2457,6 +2460,9 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     return loc === 'yard' ? 'received' : loc === 'withcar' ? 'withcar' : loc === 'courier' ? 'courier' : loc === 'missing' ? 'missing' : 'eligible';
   }
   const titleLoadable = (v) => { const s = titleStage(v); return (s === 'received' && v.t_vin_ok !== 'No') || s === 'withcar'; };
+  // group (internal) companies: customers marked "Group company (internal)" = Yes
+  const isGroupCus = (id) => !!id && (S.cus.get(id) || {}).internal === 'Yes';
+  const groupCusIds = () => [...S.cus.values()].filter((c) => c.internal === 'Yes').map((c) => c.id).sort((a, b) => (cusName(a) || a).localeCompare(cusName(b) || b));
   const isInternal = (v) => { const c = S.cus.get(v.customer_id || (S.con.get(v.container) || {}).customer_id); return !!c && c.internal === 'Yes'; };
   const isTopCus = (v) => { const c = S.cus.get(v.customer_id || (S.con.get(v.container) || {}).customer_id); return !!c && c.top === 'Yes'; };
   // ---------- Car flow: one record filled in steps (intake → paid → dispatch → picked → yard → title → carrier paid → loaded) ----------
@@ -2565,6 +2571,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       field('Loading yard', mselect([...L('origins').map((o) => [o, o]), ['__none', 'Not set']], f.yard, set('yard'), 'Towing yard filter', 'All yards')),
       field('Carrier', mselect([...carrOpts, ['__none', 'No carrier yet']], f.carrier, set('carrier'), 'Towing carrier filter', 'All carriers')),
       h('span', { class: 'vt-spacer' }),
+      S.canWrite ? h('button', { class: 'vt-btn is-primary', type: 'button', onclick: () => { S.drawer = { mode: 'bulkpay' }; render(); } }, `Bulk payment (${fmtN(all.filter((v) => towStage(v) === 'purchased' && !v.exit_reason && !v.container).length)})`) : null,
       h('button', { class: 'vt-btn', type: 'button', onclick: () => { S.drawer = { mode: 'carriers' }; render(); } }, `Carriers (${fmtN(carriers().length)})`),
       h('button', { class: 'vt-btn', type: 'button', onclick: () => { S.drawer = { mode: 'pickups' }; render(); } }, `Pickup locations (${fmtN(pickups().length)})`));
     const subBtn = (id, label, n) => h('button', { type: 'button', class: 'vt-sub-tab', 'aria-pressed': String(f.scope === id), onclick: () => { f.scope = id; f.stage = ''; render(); } }, label, h('b', { text: fmtN(n) }));
@@ -2846,7 +2853,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       field('Customer', mselect(cusOpts(true), f.customer, set('customer'), 'Customer filter (mix containers match any of their customers)', 'All customers')),
       field('Loader', select(uniqVals(all, 'shipper', L('shippers')), f.shipper, set('shipper'), 'Container shipper filter', 'All loaders')),
       field('Voyage', select(voyOpts, f.voyage, set('voyage'), 'Voyage filter', 'All voyages')),
-      field('Full / Mix', mselect([['Full', 'Full'], ['Mix', 'Mix']], f.load, set('load'), 'Full or mix filter', 'Full and mix')),
+      field('Full / Mix / Group', mselect([['Full', 'Full'], ['Mix', 'Mix'], ['Group', 'Group']], f.load, set('load'), 'Full, mix or group filter', 'All types')),
       field('Line', mselect(cntOpts(all, (c) => c.line), f.line, set('line'), 'Container line filter', 'All lines')),
       field('Size', mselect(cntOpts(all, (c) => c.size), f.size, set('size'), 'Container size filter', 'All sizes')),
       field('Clearance', mselect(cntOpts(all, (c) => c.clearance), f.clearance, set('clearance'), 'Container clearance filter', 'Any clearance')),
@@ -2860,7 +2867,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const cols = [
       { key: 'container', label: 'Container', mono: true, copy: true, render: (r) => lockedCon(r) ? h('span', null, r.container, lockTag()) : r.container },
       { key: 'shipper', label: 'Loader' },
-      { key: 'customer', label: 'Customer', render: (r) => r.customer_id === UNASSIGNED ? h('span', { class: 'vt-lock', text: 'Unassigned' }) : r.load === 'Mix' ? h('span', null, r.customer, h('span', { class: 'vt-tag', title: 'Mix container: customer shown is the common consignee', text: `Mix · ${new Set(carsIn(r.container).map((v) => v.customer_id || r.customer_id).filter(Boolean)).size} cust.` })) : r.customer },
+      { key: 'customer', label: 'Customer', render: (r) => r.customer_id === UNASSIGNED ? h('span', { class: 'vt-lock', text: 'Unassigned' }) : r.load === 'Mix' ? h('span', null, r.customer, h('span', { class: 'vt-tag', title: 'Mix container: customer shown is the common consignee', text: `Mix · ${new Set(carsIn(r.container).map((v) => v.customer_id || r.customer_id).filter(Boolean)).size} cust.` })) : r.load === 'Group' ? h('span', null, r.customer, h('span', { class: 'vt-tag', title: 'Group container: customer shown is the consignee (a group company)', text: 'Group' })) : r.customer },
       { key: 'etd', label: 'ETD', render: (r) => fmtD(r.etd) },
       { key: 'eta', label: f.sub === 'delivered' ? 'Arrived (ETA)' : 'ETA', render: (r) => fmtD(r.eta) },
       { key: 'transit', label: 'Transit (days)', num: true, render: (r) => { const d = transitDays(r); return d == null ? h('span', { class: 'vt-muted', title: 'ETD or ETA missing on the voyage', text: '—' }) : h('span', { class: 'vt-transit-d' + (d < 0 ? ' is-bad' : ''), title: d < 0 ? 'ETA is before ETD: check the voyage dates' : `${fmtD(r.etd)} → ${fmtD(r.eta)}`, text: `${d} d` }); } },
@@ -3094,7 +3101,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const cols = [
       ...(canSel ? [{ key: 'sel', label: '', head: selHead, nosort: true, render: (r) => lockedCon(r) ? '' : h('input', { type: 'checkbox', class: 'vt-check', 'aria-label': `Select ${r.container}`, checked: sel.has(r.id), onchange: (e) => { e.target.checked ? sel.add(r.id) : sel.delete(r.id); render(); } }) }] : []),
       { key: 'container', label: 'Container', mono: true, copy: true },
-      { key: 'customer', label: 'Customer', render: (r) => r.loadType === 'Mix' ? h('span', null, r.customer, h('span', { class: 'vt-tag', text: 'Mix' })) : r.customer },
+      { key: 'customer', label: 'Customer', render: (r) => r.loadType === 'Mix' || r.loadType === 'Group' ? h('span', null, r.customer, h('span', { class: 'vt-tag', text: r.loadType })) : r.customer },
       { key: 'shipper', label: 'Loader' },
       { key: 'voyage', label: 'Voyage' },
       { key: 'pod', label: 'Port' },
@@ -3318,7 +3325,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       opt('customer', cusOpts(false).map((x) => x[1]), ['Customer', 'All customers']), opt('shipper', L('shippers'), ['Loader', 'All loaders']), opt('status', CON_STATUS, ['Status', 'All statuses']),
       opt('pod', L('ports'), ['Port', 'All ports']), opt('line', L('lines'), ['Line', 'All lines']), opt('origin', L('origins'), ['Origin', 'All origins']),
       opt('clearance', L('clearance'), ['Clearance', 'Any clearance']),
-      opt('size', L('sizes'), ['Size', 'All sizes']), opt('loadType', ['Full', 'Mix'], ['Full / Mix', 'Full and mix']),
+      opt('size', L('sizes'), ['Size', 'All sizes']), opt('loadType', ['Full', 'Mix', 'Group'], ['Full / Mix / Group', 'All types']),
       null);
     let lo = Infinity, hi = -Infinity;
     for (const c of all) { const s = weekOf(parseD(c.eta)); if (s < lo) lo = s; if (s > hi) hi = s; }
@@ -3727,7 +3734,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     if (d.mode === 'edit' || d.mode === 'paste') restoreDraft(d);
     const prevScroll = drawerEl ? (drawerEl.querySelector('.vt-drawer-body') || {}).scrollTop : 0;
     if (drawerEl) drawerEl.remove();
-    const body = d.mode === 'pickup' ? pickupDrawer(d) : d.mode === 'pickups' ? pickupsDrawer() : d.mode === 'tow' ? towDrawer(d) : d.mode === 'decl' ? declDrawer(d) : d.mode === 'title' ? titleDrawer(d) : d.mode === 'carrier' ? carrierDrawer(d) : d.mode === 'carriers' ? carriersDrawer() : d.mode === 'trecv' ? titleRecvDrawer(d) : d.mode === 'drafts' ? draftsDrawer() : d.mode === 'paste' ? pasteDrawer(d) : d.kind === 'voy' ? voyDrawer(d) : d.kind === 'cus' ? cusDrawer(d) : d.kind === 'rate' ? rateDrawer(d) : d.kind === 'con' ? conDrawer(d) : vehDrawer(d);
+    const body = d.mode === 'bulkpay' ? bulkPayDrawer(d) : d.mode === 'pickup' ? pickupDrawer(d) : d.mode === 'pickups' ? pickupsDrawer() : d.mode === 'tow' ? towDrawer(d) : d.mode === 'decl' ? declDrawer(d) : d.mode === 'title' ? titleDrawer(d) : d.mode === 'carrier' ? carrierDrawer(d) : d.mode === 'carriers' ? carriersDrawer() : d.mode === 'trecv' ? titleRecvDrawer(d) : d.mode === 'drafts' ? draftsDrawer() : d.mode === 'paste' ? pasteDrawer(d) : d.kind === 'voy' ? voyDrawer(d) : d.kind === 'cus' ? cusDrawer(d) : d.kind === 'rate' ? rateDrawer(d) : d.kind === 'con' ? conDrawer(d) : vehDrawer(d);
     drawerEl = h('div', null, h('div', { class: 'vt-drawer-bg', onclick: () => { if (!d.busy) closeDrawer(); } }), body);
     drawerEl.dataset.sig = sig(d);
     const banner = draftBanner(d); const bodyEl = drawerEl.querySelector('.vt-drawer-body'); if (banner && bodyEl) bodyEl.prepend(banner);
@@ -3974,6 +3981,67 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     ], ro ? null : [h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', onclick: save }, 'Save title')]);
   }
   // ---------- Towing drawer: car header + towing steps only ----------
+  // Towing → Bulk payment: record the auction payment / release for many "Purchased" cars at once.
+  // Same fields as the single "Record payment / release" step (tw_paid, tw_case, tw_gate); each car moves to
+  // "Paid · to post" and its 3-working-day clock starts from the paid date.
+  function bulkPayDrawer(d) {
+    if (!d.init) { d.init = true; d.sel = new Set(); d.date = TODAY_ISO; d.tcase = 'AQS account'; d.gates = {}; d.q = ''; }
+    const cars = [...S.veh.values()].filter((v) => towStage(v) === 'purchased' && !v.exit_reason && !v.container)
+      .sort((a, b) => String(a.purchased || '').localeCompare(String(b.purchased || '')) || String(a.vin).localeCompare(String(b.vin)));
+    const count = h('b', { text: '0' });
+    const go = h('button', { class: 'vt-btn is-primary', type: 'button', disabled: true }, 'Record payment');
+    const sync = () => {
+      const n = d.sel.size; count.textContent = fmtN(n);
+      go.disabled = !n || d.busy; go.textContent = n ? `Record payment for ${fmtN(n)} car${n === 1 ? '' : 's'}` : 'Record payment';
+      if (all) { const vis = rowEls.filter((r) => !r.tr.hidden); all.checked = vis.length > 0 && vis.every((r) => d.sel.has(r.vin)); all.indeterminate = !all.checked && vis.some((r) => d.sel.has(r.vin)); }
+    };
+    const rowEls = cars.map((v) => {
+      const cb = h('input', { type: 'checkbox', 'aria-label': `Select ${v.vin}`, onchange: (e) => { if (e.target.checked) d.sel.add(v.vin); else d.sel.delete(v.vin); sync(); } });
+      cb.checked = d.sel.has(v.vin);
+      const gate = h('input', { class: 'vt-inline', type: 'text', value: d.gates[v.vin] ?? v.tw_gate ?? '', placeholder: 'Gate PIN', 'aria-label': `Gate PIN for ${v.vin}`, oninput: (e) => { d.gates[v.vin] = e.target.value; } });
+      const hay = [v.vin, v.vehicle, v.buyer, v.tw_lot, vehCustomer(v)].map((x) => norm(x).toLowerCase()).join(' ');
+      const tr = h('tr', { onclick: (e) => { if (e.target.tagName !== 'INPUT') { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } } },
+        h('td', null, cb), h('td', { class: 'mono', text: v.vin }), h('td', { text: v.vehicle || '' }), h('td', { text: vehCustomer(v) }),
+        h('td', { text: v.buyer || '' }), h('td', { class: 'mono', text: v.tw_lot || '' }), h('td', { text: v.purchased ? fmtD(v.purchased) : '' }), h('td', null, gate));
+      return { vin: v.vin, tr, hay };
+    });
+    const all = rowEls.length ? h('input', { type: 'checkbox', 'aria-label': 'Select all shown', onchange: (e) => { for (const r of rowEls) if (!r.tr.hidden) { if (e.target.checked) d.sel.add(r.vin); else d.sel.delete(r.vin); r.tr.querySelector('input[type=checkbox]').checked = e.target.checked; } sync(); } }) : null;
+    const filter = () => { const q = norm(d.q).toLowerCase(); for (const r of rowEls) r.tr.hidden = !!q && !r.hay.includes(q); sync(); };
+    const run = async () => {
+      if (!d.sel.size || d.busy) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) return setMsg(d, 'Enter the paid / release date.', true, { tw_paid: 'Required' });
+      d.busy = true; go.disabled = true;
+      const vins = [...d.sel]; let ok = 0; const bad = [];
+      for (const vin of vins) {
+        const g = norm(d.gates[vin] ?? '');
+        try {
+          await write(() => coll('veh').doc(vin).update({ tw_paid: d.date, tw_case: d.tcase, ...(g ? { tw_gate: g } : {}), updatedAt: stamp() }));
+          ok++; d.sel.delete(vin);
+        } catch (e) { bad.push(`${vin}: ${errText(e)}`); }
+        go.textContent = `Recording… ${fmtN(ok + bad.length)} of ${fmtN(vins.length)}`;
+        await sleep(30);
+      }
+      d.busy = false;
+      if (bad.length) { setMsg(d, `${fmtN(ok)} recorded, ${fmtN(bad.length)} not saved: ${bad.slice(0, 3).join('; ')}${bad.length > 3 ? '…' : ''}`, true); redrawDrawer(); }
+      else { toast(`Payment recorded for ${fmtN(ok)} car${ok === 1 ? '' : 's'}: now "Paid · to post"`); closeDrawer(); }
+    };
+    go.onclick = run;
+    const search = h('input', { type: 'search', value: d.q, placeholder: 'VIN, vehicle, customer, buyer, lot', 'aria-label': 'Search cars', oninput: (e) => { d.q = e.target.value; filter(); } });
+    const body = [
+      h('p', { class: 'vt-note', text: 'Cars at "Purchased" (auction won, payment not recorded). Pick the cars you paid for: they move to "Paid · to post" and the 3-working-day pickup clock starts from the paid date.' }),
+      h('div', { class: 'vt-form' },
+        h('label', { 'data-key': 'tw_paid' }, 'Auction paid / release received on *', h('input', { type: 'date', value: d.date, 'aria-label': 'Paid / release date', onchange: (e) => { d.date = e.target.value; } })),
+        h('label', null, 'Who tows', select(TOW_CASES.filter((x) => x[0] !== 'Customer delivers').map((x) => [x[0], x[1]]), d.tcase, (v) => { d.tcase = v; }, 'Who tows', null))),
+      cars.length ? h('div', { class: 'vt-tools' }, h('label', { class: 'vt-f is-wide' }, h('span', { text: 'Search' }), search), h('span', { class: 'vt-spacer' }), h('span', { class: 'vt-count' }, count, ` of ${fmtN(cars.length)} selected`)) : null,
+      cars.length ? h('div', { class: 'vt-tablebox' }, h('table', { class: 'vt-table vt-bulkpay' },
+        h('thead', null, h('tr', null, h('th', null, all), ...['VIN', 'Vehicle', 'Customer', 'Buyer account', 'Lot #', 'Purchased', 'Gate PIN (optional)'].map((x) => h('th', { text: x })))),
+        h('tbody', null, rowEls.map((r) => r.tr))))
+        : h('div', { class: 'vt-empty' }, h('b', { text: 'No cars waiting for payment' }), h('p', { text: 'Every purchased car already has its auction payment recorded.' })),
+      msgEl(d),
+    ];
+    setTimeout(() => { filter(); }, 0);
+    return shell('Bulk payment: auction paid / release', body, [h('button', { class: 'vt-btn', type: 'button', onclick: () => { if (!d.busy) closeDrawer(); } }, 'Cancel'), go], 'xl');
+  }
   function towDrawer(d) {
     const rec = d.id ? (S.veh.get(d.id) || (d.form && d.form.id === d.id ? { ...d.form } : null)) : null;
     if (!rec) return shell('Towing', [h('p', { class: 'vt-note', text: 'Towing records come from the vehicle list. Add the car in Vehicles with its initial towing details; it then appears here at the right stage.' })], null);
@@ -4215,12 +4283,12 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const addBtn = opts.onAdd ? h('button', { class: 'vt-btn is-primary is-sm', type: 'button' }) : null;
     const draw = () => {
       const q = pk.q.trim().toLowerCase();
-      const cands = sortRows([...S.veh.values()].filter((v) => isReady(v) && (!pk.ship || v.shipper === pk.ship) && (opts.mix ? !!v.customer_id : (!opts.customer || opts.customer === UNASSIGNED || !v.customer_id || v.customer_id === opts.customer)) && (!q || [v.vin, v.vehicle].some((x) => norm(x).toLowerCase().includes(q)))), ['arrived', 'asc']);
-      const ruleOk = (v) => isReady(v) && (opts.mix ? !!v.customer_id : (!opts.customer || opts.customer === UNASSIGNED || !v.customer_id || v.customer_id === opts.customer));
+      const cands = sortRows([...S.veh.values()].filter((v) => isReady(v) && (!pk.ship || v.shipper === pk.ship) && (opts.group ? isGroupCus(v.customer_id) : opts.mix ? !!v.customer_id : (!opts.customer || opts.customer === UNASSIGNED || !v.customer_id || v.customer_id === opts.customer)) && (!q || [v.vin, v.vehicle].some((x) => norm(x).toLowerCase().includes(q)))), ['arrived', 'asc']);
+      const ruleOk = (v) => isReady(v) && (opts.group ? isGroupCus(v.customer_id) : opts.mix ? !!v.customer_id : (!opts.customer || opts.customer === UNASSIGNED || !v.customer_id || v.customer_id === opts.customer));
       for (const vin of [...pk.sel]) { const v = S.veh.get(vin); if (!v || !ruleOk(v)) pk.sel.delete(vin); }
       const shown = cands.slice(0, 300);
       // why a car is not listed: searched VIN that is not addable, plus ready cars hidden by the loader / customer rule
-      const why = (v) => { const r = []; if (!isOnHand(v)) r.push(`left the warehouse (${v.exit_reason || 'exited'})`); if (v.container) r.push(`already in ${v.container}`); if (!titleLoadable(v)) r.push(`title not loadable: ${tStage(titleStage(v)).label}`); if (pk.ship && v.shipper !== pk.ship) r.push(`loader is ${v.shipper || 'not set'}, container is ${pk.ship}`); if (opts.mix && !v.customer_id) r.push('no customer set on the car (a mix container needs each car\'s customer)'); if (!opts.mix && opts.customer && opts.customer !== UNASSIGNED && v.customer_id && v.customer_id !== opts.customer) r.push(`customer is ${vehCustomer(v)}, container is ${cusName(opts.customer)}`); return r; };
+      const why = (v) => { const r = []; if (!isOnHand(v)) r.push(`left the warehouse (${v.exit_reason || 'exited'})`); if (v.container) r.push(`already in ${v.container}`); if (!titleLoadable(v)) r.push(`title not loadable: ${tStage(titleStage(v)).label}`); if (pk.ship && v.shipper !== pk.ship) r.push(`loader is ${v.shipper || 'not set'}, container is ${pk.ship}`); if (opts.group && !isGroupCus(v.customer_id)) r.push(`customer ${vehCustomer(v) || 'not set'} is not a group company`); if (opts.mix && !v.customer_id) r.push('no customer set on the car (a mix container needs each car\'s customer)'); if (!opts.mix && opts.customer && opts.customer !== UNASSIGNED && v.customer_id && v.customer_id !== opts.customer) r.push(`customer is ${vehCustomer(v)}, container is ${cusName(opts.customer)}`); return r; };
       const inC = new Set(cands.map((v) => v.vin));
       const blocked = q ? [...S.veh.values()].filter((v) => !inC.has(v.vin) && [v.vin, v.vehicle].some((x) => norm(x).toLowerCase().includes(q))).slice(0, 8) : [];
       const hiddenReady = [...S.veh.values()].filter((v) => isReady(v) && !inC.has(v.vin)).length;
@@ -4309,10 +4377,11 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   }
 
   // --- full / mix choice + common consignee for mix
-  const LOADS = [['Full', 'Full container', 'One customer: every car belongs to the container\'s customer'], ['Mix', 'Mix container', 'Several customers\' cars; pick one common consignee from them']];
+  const LOADS = [['Full', 'Full container', 'One customer: every car belongs to the container\'s customer'], ['Mix', 'Mix container', 'Several customers\' cars; pick one common consignee from them'],
+    ['Group', 'Group container', 'Cars of our group companies; the consignee can be any group company']];
   function loadPicker(d, ro) {
     return h('div', { class: 'vt-loadpick', role: 'radiogroup', 'aria-label': 'Full or mix container', 'data-key': 'load', 'data-label': 'Full or mix container' },
-      h('span', { class: 'vt-loadpick-l', text: 'Full or mix container *' }),
+      h('span', { class: 'vt-loadpick-l', text: 'Full, mix or group container *' }),
       h('div', { class: 'vt-loadpick-o' }, LOADS.map(([id, label, sub]) => h('label', { class: 'vt-loadopt' + (d.form.load === id ? ' is-on' : '') + (ro ? ' is-ro' : '') },
         h('input', { type: 'radio', name: 'con-load', value: id, checked: d.form.load === id, disabled: ro, onchange: () => { d.form.load = id; d.ferr = null; redrawDrawer(); } }),
         h('b', { text: label }), h('small', { text: sub })))));
@@ -4336,6 +4405,20 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     return wrap;
   }
 
+  // Group container: the consignee can be any group company, whether or not it has a car in the container
+  function groupConsigneePicker(d, ro) {
+    const ids = groupCusIds();
+    const opts = ids.map((id) => [id, cusName(id) || id]);
+    if (d.form.customer_id && !ids.includes(d.form.customer_id)) opts.push([d.form.customer_id, `${cusName(d.form.customer_id) || d.form.customer_id} (not a group company)`]);
+    const sel = select(opts, d.form.customer_id || '', (v) => { d.form.customer_id = v; }, 'Consignee (group company)', ids.length ? '— choose the group company —' : '— no group companies set up —');
+    if (ro || !ids.length) sel.setAttribute('disabled', '');
+    return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+      h('label', { class: 'vt-f', style: { maxWidth: 'none', flex: 'none' }, 'data-key': 'customer_id', 'data-label': 'Consignee (group company)' }, h('span', { text: 'Consignee (group company) *' }), sel),
+      h('p', { class: 'vt-note', text: ids.length
+        ? `Group companies: ${ids.map((id) => cusName(id) || id).join(', ')}. Cars of any of them can go in this container, and the consignee can be any of them.`
+        : 'No customer is marked as a group company yet. Open Customers and set "Group company (internal)" to Yes on each group company.' }));
+  }
+
   // --- container drawer
   function conDrawer(d) {
     const rec = d.id ? S.con.get(d.id) : null;
@@ -4344,17 +4427,23 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const ro = !S.canWrite || locked;
     if (!d.form) { d.form = rec ? { ...S.conRaw.get(rec.id) } : {}; if (rec && !d.form.load) d.form.load = 'Full'; }
     const isMix = d.form.load === 'Mix';
+    const isGroup = d.form.load === 'Group';
     const save = async () => {
       const data = valuesOf(CON_FIELDS, d.form);
       data.voyage_id = d.form.voyage_id || null;
       data.customer_id = d.form.customer_id || null;
       data.load = d.form.load || null;
-      if (!data.load) return setMsg(d, 'Choose Full or Mix container first.', true, { load: 'Choose Full or Mix' });
+      if (!data.load) return setMsg(d, 'Choose Full, Mix or Group container first.', true, { load: 'Choose Full, Mix or Group' });
       const picks0 = d.pk ? [...d.pk.sel] : [];
       const carsAll = [...(rec ? carsIn(rec.container) : []), ...picks0.map((x) => S.veh.get(x)).filter(Boolean)];
       const missing = CON_FIELDS.filter((fd) => fd.required && !fd.id && !data[fd.key]).map((fd) => fd.label);
       if (!data.voyage_id) missing.push('Voyage');
-      if (data.load === 'Mix') {
+      if (data.load === 'Group') {
+        if (!groupCusIds().length) return setMsg(d, 'Group container: no customer is marked as a group company yet. Set "Group company (internal)" to Yes in Customers first.', true, { customer_id: 'No group companies set up' });
+        if (!data.customer_id || !isGroupCus(data.customer_id)) return setMsg(d, 'Consignee: choose one of the group companies.', true, { customer_id: 'Choose a group company' });
+        const outside = carsAll.filter((v) => !isGroupCus(v.customer_id));
+        if (outside.length) return setMsg(d, `Group container takes group companies' cars only. ${outside.length} car(s) belong to ${[...new Set(outside.map((v) => vehCustomer(v) || 'no customer'))].join(', ')} (${outside.slice(0, 3).map((v) => v.vin).join(', ')}${outside.length > 3 ? '…' : ''}). Remove them or make it a Mix container.`, true);
+      } else if (data.load === 'Mix') {
         const ids = mixCusIds(d, rec);
         if (!ids.length) return setMsg(d, 'Mix container: pick its cars first; the common consignee is chosen from their customers.', true, { customer_id: 'Pick cars first' });
         if (!data.customer_id || !ids.includes(data.customer_id)) return setMsg(d, `Common consignee: choose one of ${ids.map((id) => cusName(id) || id).join(', ')}.`, true, { customer_id: 'Choose one of the customers in this container' });
@@ -4373,7 +4462,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
           d.busy = true; setMsg(d, 'Saving…');
           await write(() => coll('con').doc(id).set({ ...data, createdAt: stamp(), updatedAt: stamp() }));
           let failed = 0;
-          for (const [i, vin] of picks.entries()) { try { await attachCar(vin, id, data.load === 'Mix' ? null : data.customer_id); } catch (_) { failed++; } setMsg(d, `Adding cars: ${i + 1} of ${picks.length}`); await sleep(40); }
+          for (const [i, vin] of picks.entries()) { try { await attachCar(vin, id, data.load === 'Mix' || data.load === 'Group' ? null : data.customer_id); } catch (_) { failed++; } setMsg(d, `Adding cars: ${i + 1} of ${picks.length}`); await sleep(40); }
           d.busy = false;
           toast(`${id} added` + (picks.length ? ` with ${picks.length - failed} cars` : '') + (failed ? ` (${failed} cars failed)` : ''), !!failed);
           S.drawer = { mode: 'edit', kind: 'con', id }; render();
@@ -4403,17 +4492,17 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
             redrawDrawer();
           } }, 'Remove')))) : h('p', { class: 'vt-note', text: 'No cars in this container yet.' }),
         !ro ? (d.showPick ? h('div', { class: 'vt-inlinebox' }, h('b', { text: 'Add cars with ready titles', style: { fontSize: '13px' } }),
-          carPicker(d, { shipper: d.form.shipper || rec.shipper, customer: isMix ? null : rec.customer_id, mix: isMix, onAdd: async (vins) => {
+          carPicker(d, { shipper: d.form.shipper || rec.shipper, customer: isMix || isGroup ? null : rec.customer_id, mix: isMix, group: isGroup, onAdd: async (vins) => {
             d.busy = true; let failed = 0;
-            for (const [i, vin] of vins.entries()) { try { await attachCar(vin, rec.container, isMix ? null : rec.customer_id); } catch (_) { failed++; } setMsg(d, `Adding cars: ${i + 1} of ${vins.length}`); await sleep(40); }
+            for (const [i, vin] of vins.entries()) { try { await attachCar(vin, rec.container, isMix || isGroup ? null : rec.customer_id); } catch (_) { failed++; } setMsg(d, `Adding cars: ${i + 1} of ${vins.length}`); await sleep(40); }
             d.busy = false; d.pk = null; d.showPick = false; setMsg(d, '');
             toast(`${vins.length - failed} cars added to ${rec.container}` + (failed ? `, ${failed} failed` : ''), !!failed); redrawDrawer();
           } }), h('div', null, h('button', { class: 'vt-btn is-sm', type: 'button', onclick: () => { d.showPick = false; d.pk = null; redrawDrawer(); } }, 'Cancel')))
           : h('div', null, h('button', { class: 'vt-btn', type: 'button', onclick: () => { d.showPick = true; redrawDrawer(); } }, '+ Add cars with ready titles'))) : null);
     } else if (S.canWrite && d.form.load) {
-      carsBox = h('div', { class: 'vt-sublist' }, h('h4', { text: isMix ? 'Pick the cars (required for a mix container)' : 'Add cars now (optional)' }),
+      carsBox = h('div', { class: 'vt-sublist' }, h('h4', { text: isMix ? 'Pick the cars (required for a mix container)' : isGroup ? 'Add group companies\' cars now (optional)' : 'Add cars now (optional)' }),
         h('p', { class: 'vt-note', text: 'Tick cars with ready titles to load them into this container when you click Add. They leave the warehouse board, marked "Loaded".' }),
-        carPicker(d, { shipper: d.form.shipper, customer: isMix ? null : d.form.customer_id, mix: isMix, onChange: () => { if (isMix && d.refreshCons) d.refreshCons(); } }));
+        carPicker(d, { shipper: d.form.shipper, customer: isMix || isGroup ? null : d.form.customer_id, mix: isMix, group: isGroup, onChange: () => { if (isMix && d.refreshCons) d.refreshCons(); } }));
     }
     const del = async (btn) => {
       if (carsIn(rec.container).length) return setMsg(d, 'Remove the cars from this container before deleting it.', true);
@@ -4429,7 +4518,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
         transitDays(rec) != null ? h('span', { class: 'vt-transit-d' + (transitDays(rec) < 0 ? ' is-bad' : ''), text: `Transit ${transitDays(rec)} days` }) : h('span', { class: 'vt-muted', text: 'Transit: ETD or ETA missing on the voyage' })) : null,
       voyagePicker(d, ro),
       loadPicker(d, ro),
-      !d.form.load ? h('p', { class: 'vt-note', text: 'Full = one customer per container. Mix = several customers\' cars with one common consignee.' }) : isMix ? consigneePicker(d, ro, rec) : customerPicker(d, ro),
+      !d.form.load ? h('p', { class: 'vt-note', text: 'Full = one customer per container. Mix = several customers\' cars with one common consignee. Group = our group companies\' cars, consigned to any group company.' }) : isGroup ? groupConsigneePicker(d, ro) : isMix ? consigneePicker(d, ro, rec) : customerPicker(d, ro),
       formFor(CON_FIELDS, d, ro, isNew),
       carsBox, msgEl(d),
     ], ro ? null : [rec && S.canWrite ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete container') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', onclick: save }, isNew ? 'Add container' : 'Save changes')], true);
