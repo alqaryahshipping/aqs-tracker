@@ -1459,17 +1459,10 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
         const j = st.bk.file; if (!j) return;
         if (!st.bk.armed) { st.bk.armed = true; btn.textContent = 'Click again to restore (overwrites records with the same ID)'; btn.classList.add('is-armed'); return; }
         st.bk.armed = false; btn.disabled = true;
-        const sb = SB.client; const rows = [];
-        for (const [col, docs] of Object.entries(j)) { if (col === '_meta' || !docs || typeof docs !== 'object') continue; for (const [id, data] of Object.entries(docs)) rows.push({ collection: col, id: String(id), data }); }
-        let done = 0, failed = 0;
-        for (let i = 0; i < rows.length; i += 200) {
-          const chunk = rows.slice(i, i + 200);
-          const { error } = await sb.from('docs').upsert(chunk, { onConflict: 'collection,id' });
-          if (error) failed += chunk.length; else done += chunk.length;
-          btn.textContent = `Restoring ${fmtN(done + failed)} of ${fmtN(rows.length)}…`;
-        }
+        // parents first, typed tables, all or nothing per batch of 100 (see SB.restore in sb-adapter.js)
+        const { done, failed, errors } = await SB.restore(j, (d, f, t) => { btn.textContent = `Restoring ${fmtN(d + f)} of ${fmtN(t)}…`; });
         btn.disabled = false; btn.textContent = 'Restore this backup';
-        toast(failed ? `${fmtN(done)} restored, ${fmtN(failed)} failed` : `${fmtN(done)} records restored. Reloading…`, !!failed);
+        toast(failed ? `${fmtN(done)} restored, ${fmtN(failed)} failed. ${errors[0] || ''}` : `${fmtN(done)} records restored. Reloading…`, !!failed);
         if (!failed) setTimeout(() => location.reload(), 1500);
       };
       restore = h('div', { class: 'vt-sublist' }, h('h4', { text: 'Restore from a backup file' }),
