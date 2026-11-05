@@ -3985,7 +3985,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   // Same fields as the single "Record payment / release" step (tw_paid, tw_case, tw_gate); each car moves to
   // "Paid · to post" and its 3-working-day clock starts from the paid date.
   function bulkPayDrawer(d) {
-    if (!d.init) { d.init = true; d.sel = new Set(); d.date = TODAY_ISO; d.tcase = 'AQS account'; d.gates = {}; d.q = ''; d.sort = ['purchased', 'asc']; }
+    if (!d.init) { d.init = true; d.sel = new Set(); d.date = TODAY_ISO; d.tcase = 'AQS account'; d.gates = {}; d.q = ''; d.sort = ['purchased', 'asc']; d.fc = ''; d.fb = ''; d.fa = ''; d.from = ''; d.to = ''; }
     // click a column heading to sort by it; click again to switch ascending / descending
     const BP_COLS = [['vin', 'VIN', (v) => v.vin], ['vehicle', 'Vehicle', (v) => v.vehicle], ['customer', 'Customer', (v) => vehCustomer(v)], ['buyer', 'Buyer account', (v) => v.buyer],
       ['lot', 'Lot #', (v) => v.tw_lot], ['purchased', 'Purchased', (v) => v.purchased]];
@@ -4010,10 +4010,22 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       const tr = h('tr', { onclick: (e) => { if (e.target.tagName !== 'INPUT') { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } } },
         h('td', null, cb), h('td', { class: 'mono', text: v.vin }), h('td', { text: v.vehicle || '' }), h('td', { text: vehCustomer(v) }),
         h('td', { text: v.buyer || '' }), h('td', { class: 'mono', text: v.tw_lot || '' }), h('td', { text: v.purchased ? fmtD(v.purchased) : '' }), h('td', null, gate));
-      return { vin: v.vin, tr, hay };
+      return { vin: v.vin, tr, hay, cus: cusIdOf(v) || '', buyer: v.buyer || '', auc: auctionOf(v) || '', pur: v.purchased || '' };
     });
     const all = rowEls.length ? h('input', { type: 'checkbox', 'aria-label': 'Select all shown', onchange: (e) => { for (const r of rowEls) if (!r.tr.hidden) { if (e.target.checked) d.sel.add(r.vin); else d.sel.delete(r.vin); r.tr.querySelector('input[type=checkbox]').checked = e.target.checked; } sync(); } }) : null;
-    const filter = () => { const q = norm(d.q).toLowerCase(); for (const r of rowEls) r.tr.hidden = !!q && !r.hay.includes(q); sync(); };
+    const filter = () => {
+      const q = norm(d.q).toLowerCase();
+      for (const r of rowEls) r.tr.hidden = (!!q && !r.hay.includes(q)) || (!!d.fc && r.cus !== d.fc) || (!!d.fb && r.buyer !== d.fb) || (!!d.fa && r.auc !== d.fa)
+        || (!!d.from && (!r.pur || r.pur < d.from)) || (!!d.to && (!r.pur || r.pur > d.to));
+      if (shownEl) shownEl.textContent = `${fmtN(rowEls.filter((r) => !r.tr.hidden).length)} shown · `;
+      sync();
+    };
+    const shownEl = h('span');
+    const optsOf = (get, label) => [...new Map(cars.map((v) => [get(v), label(v)]).filter(([k]) => k)).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+      .map(([k, l]) => [k, `${l} (${fmtN(cars.filter((v) => get(v) === k).length)})`]);
+    const fsel = (label, key, opts, all) => h('label', { class: 'vt-f' }, h('span', { text: label }), select(opts, d[key], (v) => { d[key] = v; filter(); }, label, all));
+    const fdate = (label, key) => h('label', { class: 'vt-f' }, h('span', { text: label }), h('input', { type: 'date', value: d[key], 'aria-label': label, onchange: (e) => { d[key] = e.target.value; filter(); } }));
+    const clearF = () => { d.q = ''; d.fc = ''; d.fb = ''; d.fa = ''; d.from = ''; d.to = ''; redrawDrawer(); };
     const run = async () => {
       if (!d.sel.size || d.busy) return;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) return setMsg(d, 'Enter the paid / release date.', true, { tw_paid: 'Required' });
@@ -4039,7 +4051,15 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       h('div', { class: 'vt-form' },
         h('label', { 'data-key': 'tw_paid' }, 'Auction paid / release received on *', h('input', { type: 'date', value: d.date, 'aria-label': 'Paid / release date', onchange: (e) => { d.date = e.target.value; } })),
         h('label', null, 'Who tows', select(TOW_CASES.filter((x) => x[0] !== 'Customer delivers').map((x) => [x[0], x[1]]), d.tcase, (v) => { d.tcase = v; }, 'Who tows', null))),
-      cars.length ? h('div', { class: 'vt-tools' }, h('label', { class: 'vt-f is-wide' }, h('span', { text: 'Search' }), search), h('span', { class: 'vt-spacer' }), h('span', { class: 'vt-count' }, count, ` of ${fmtN(cars.length)} selected`)) : null,
+      // is-open: the page's "More filters" folding is for list screens; this panel always shows all its filters
+      cars.length ? h('div', { class: 'vt-tools is-open' },
+        h('label', { class: 'vt-f is-wide' }, h('span', { text: 'Search' }), search),
+        fsel('Customer', 'fc', optsOf((v) => cusIdOf(v), (v) => vehCustomer(v)), 'All customers'),
+        fsel('Buyer account', 'fb', optsOf((v) => v.buyer, (v) => v.buyer), 'All buyer accounts'),
+        fsel('Auction', 'fa', optsOf((v) => auctionOf(v), (v) => auctionOf(v)), 'All auctions'),
+        fdate('Purchased from', 'from'), fdate('Purchased to', 'to'),
+        h('button', { class: 'vt-btn vt-clear', type: 'button', onclick: clearF }, 'Clear filters'),
+        h('span', { class: 'vt-spacer' }), h('span', { class: 'vt-count' }, shownEl, count, ` of ${fmtN(cars.length)} selected`)) : null,
       cars.length ? h('div', { class: 'vt-tablebox' }, h('table', { class: 'vt-table vt-bulkpay' },
         h('thead', null, h('tr', null, h('th', null, all), ...BP_COLS.map(sortTh), h('th', { text: 'Gate PIN (optional)' }))),
         h('tbody', null, rowEls.map((r) => r.tr))))
