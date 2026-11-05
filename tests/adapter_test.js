@@ -39,7 +39,7 @@ const SB = win.SB;
 
   // 2. not-in, == null, unknown field -> extra->>
   await db.collection('pickups').where('auction', 'not-in', ['Copart', 'IAA']).get(); q = calls.pop();
-  assert.deepStrictEqual(q.ops.find((o) => o[0] === 'not'), ['not', 'auction', 'in', '("Copart","IAA")']);
+  assert.deepStrictEqual(q.ops.find((o) => o[0] === 'or'), ['or', 'auction.is.null,auction.not.in.("Copart","IAA")']);
   await db.collection('pickups').where('auction', '==', null).get(); q = calls.pop();
   assert.deepStrictEqual(q.ops.find((o) => o[0] === 'is'), ['is', 'auction', null]);
   await db.collection('vehicles').where('weird', '>=', 5).get(); q = calls.pop();
@@ -54,7 +54,7 @@ const SB = win.SB;
   // 4. writes go to rec_write with the right flags
   await db.collection('vehicles').doc('V1').set({ vin: 'V1', price: 1 });
   await db.collection('vehicles').doc('V1').update({ price: 2 });
-  assert.deepStrictEqual(rpcs.splice(0), [['rec_write', { p_table: 'vehicles', p_id: 'V1', p_data: { vin: 'V1', price: 1 }, p_replace: true }], ['rec_write', { p_table: 'vehicles', p_id: 'V1', p_data: { price: 2 }, p_replace: false }]]);
+  assert.deepStrictEqual(rpcs.splice(0), [['rec_write', { p_table: 'vehicles', p_id: 'V1', p_data: { vin: 'V1', price: 1 }, p_replace: true, p_create: true }], ['rec_write', { p_table: 'vehicles', p_id: 'V1', p_data: { price: 2 }, p_replace: false }]]);
 
   // 5. settings + per-user docs
   nextResult.app_settings = { data: { value: { shippers: ['NWL'] } }, error: null };

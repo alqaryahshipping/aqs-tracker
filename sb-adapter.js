@@ -185,7 +185,10 @@
           if (value === null && op === '==') req = req.is(path, null);
           else if (value === null && op === '!=') req = req.not(path, 'is', null);
           else if (o === 'in') req = req.in(path, value.map(String));
-          else if (o === 'notin') req = req.not(path, 'in', '(' + value.map(quote).join(',') + ')');
+          // "not in the list" must also return records where the field is empty: the tracker loads cars as
+          // "one query per loader + everything else", and SQL NOT IN skips empty values, which hid every car
+          // without a loader (5 Nov 2026 incident). Callers dedupe by ID, so overlap with an "== null" query is harmless.
+          else if (o === 'notin') req = req.or(`${path}.is.null,${path}.not.in.(${value.map(quote).join(',')})`);
           else req = req[o](path, typeof value === 'number' ? value : String(value));
         }
         const { data, error } = await req.range(0, max - 1);
@@ -220,7 +223,8 @@
           if (error) throw mapErr(error);
           return;
         }
-        const { error } = await sb.rpc('rec_write', { p_table: m.t, p_id: id, p_data: obj || {}, p_replace: true });
+        // the tracker only calls set() on business records to ADD them: never overwrite an existing one
+        const { error } = await sb.rpc('rec_write', { p_table: m.t, p_id: id, p_data: obj || {}, p_replace: true, p_create: true });
         if (error) throw mapErr(error, obj);
       },
       async update(patch) {
