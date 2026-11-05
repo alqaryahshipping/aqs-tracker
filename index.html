@@ -1139,9 +1139,10 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   const cleanId = (s) => norm(s).toUpperCase().replace(/[^A-Z0-9_\-.~:@+]/g, '');
   const stamp = () => new Date().toISOString();
   // a voyage is a duplicate when the same shipping line already has the same voyage number
-  const voyKey = (line, no) => norm(no) ? `${norm(line).toLowerCase()}|${norm(no).toUpperCase().replace(/[\s\-_./]/g, '')}` : '';
-  const voyDup = (data, exceptId) => { const k = voyKey(data.line, data.voyage_no); return k ? [...S.voy.values()].find((y) => y.id !== exceptId && voyKey(y.line, y.voyage_no) === k) : null; };
-  const voyDupMsg = (y) => `Voyage ${y.voyage_no} on ${y.line} already exists (${voyLabel(y)}). Pick it instead of creating a duplicate.`;
+  // same vessel + same voyage no. = same voyage (spaces, dashes, dots and case ignored)
+  const voyKey = (vessel, no) => norm(no) && norm(vessel) ? `${norm(vessel).toUpperCase().replace(/[\s\-_./]/g, '')}|${norm(no).toUpperCase().replace(/[\s\-_./]/g, '')}` : '';
+  const voyDup = (data, exceptId) => { const k = voyKey(data.vessel, data.voyage_no); return k ? [...S.voy.values()].find((y) => y.id !== exceptId && voyKey(y.vessel, y.voyage_no) === k) : null; };
+  const voyDupMsg = (y) => `${y.vessel} voyage ${y.voyage_no} already exists (${voyLabel(y)}). Pick it instead of creating a duplicate.`;
   const newVoyId = () => 'VY' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase();
   const attachCar = (vin, cid, cus) => { const v = S.veh.get(vin) || {}; const extra = !v.customer_id && cus && cus !== UNASSIGNED ? { customer_id: cus } : {}; return write(() => coll('veh').doc(vin).update({ container: cid, exit_reason: 'Loaded', exit_date: TODAY_ISO, ...extra, updatedAt: stamp() })); };
   const detachCar = (vin) => write(() => coll('veh').doc(vin).update({ container: null, exit_reason: null, exit_date: null, updatedAt: stamp() }));
@@ -1990,8 +1991,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
           const miss = [!norm(y.line) && 'line', !norm(y.pod) && 'port'];
           if (y.status === 'Planned' && ahead(parseD(y.etd)) != null && ahead(parseD(y.etd)) <= th('voyinfo')) miss.push(!norm(y.vessel) && 'vessel', !norm(y.voyage_no) && 'voyage no.');
           const m = miss.filter(Boolean); return m.length ? yItem(y, `Missing: ${m.join(', ')}`, null) : null; }).filter(Boolean) },
-      { id: 'C7', grp: 'Missing data', sev: 'data', title: 'Duplicate voyage (same carrier + voyage no.)', fix: 'Move the containers to one voyage and delete the duplicate.',
-        items: () => { const g = new Map(); for (const y of voys) { const k = voyKey(y.line, y.voyage_no); if (k) (g.get(k) || g.set(k, []).get(k)).push(y); } return [...g.values()].filter((a) => a.length > 1).flatMap((a) => a.map((y) => yItem(y, `${a.length} voyages share ${y.line} ${y.voyage_no}`, null))); } },
+      { id: 'C7', grp: 'Missing data', sev: 'data', title: 'Duplicate voyage (same vessel + voyage no.)', fix: 'Move the containers to one voyage and delete the duplicate.',
+        items: () => { const g = new Map(); for (const y of voys) { const k = y.dup_ok === 'Yes' ? '' : voyKey(y.vessel, y.voyage_no); if (k) (g.get(k) || g.set(k, []).get(k)).push(y); } return [...g.values()].filter((a) => a.length > 1).flatMap((a) => a.map((y) => yItem(y, `${a.length} voyages share ${y.vessel} ${y.voyage_no}`, null))); } },
       { id: 'C6', grp: 'Missing data', sev: 'data', title: 'Car in yard without loading yard', fix: 'Open the car and set Loading yard (title tracking needs it).',
         items: () => yard.filter((v) => !norm(v.yard)).map((v) => vItem(v, `${daysIn(v) ?? '?'} days at yard`, null)) },
       { id: 'C5', grp: 'Missing data', sev: 'data', title: 'Car in yard without price or buyer account', fix: 'Open the car and fill Price / Buyer.',
@@ -4116,7 +4117,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
             const data = valuesOf(VOY_FIELDS, d.nv.form);
             const miss = VOY_FIELDS.filter((f) => f.required && !data[f.key]).map((f) => f.label);
             if (miss.length) return setMsg(d, `New voyage needs: ${miss.join(', ')}.`, true);
-            { const dup = voyDup(data); if (dup) return setMsg(d, voyDupMsg(dup), true, { voyage_no: 'Same line + voyage no. already exists' }); }
+            { const dup = voyDup(data); if (dup) return setMsg(d, voyDupMsg(dup), true, { voyage_no: 'Same vessel + voyage no. already exists' }); }
             const id = newVoyId();
             try { await write(() => coll('voy').doc(id).set({ ...data, createdAt: stamp(), updatedAt: stamp() })); S.voy.set(id, { id, ...data }); d.form.voyage_id = id; d.newVoy = false; d.nv = null; setMsg(d, ''); toast('Voyage created'); redrawDrawer(); }
             catch (e) { setMsg(d, errText(e), true); }
@@ -4359,7 +4360,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       const data = valuesOf(VOY_FIELDS, d.form);
       const miss = VOY_FIELDS.filter((f) => f.required && !data[f.key]).map((f) => f.label);
       if (miss.length) return setMsg(d, `Fill in: ${miss.join(', ')}.`, true);
-      { const dup = (!rec || voyKey(rec.line, rec.voyage_no) !== voyKey(data.line, data.voyage_no)) && voyDup(data, rec && rec.id); if (dup) return setMsg(d, voyDupMsg(dup), true, { voyage_no: 'Same line + voyage no. already exists', line: 'Same line + voyage no. already exists' }); }
+      { const dup = (!rec || voyKey(rec.vessel, rec.voyage_no) !== voyKey(data.vessel, data.voyage_no)) && voyDup(data, rec && rec.id); if (dup) return setMsg(d, voyDupMsg(dup), true, { voyage_no: 'Same vessel + voyage no. already exists', vessel: 'Same vessel + voyage no. already exists' }); }
       if (isNew) {
         const id = newVoyId();
         try { d.busy = true; await write(() => coll('voy').doc(id).set({ ...data, createdAt: stamp(), updatedAt: stamp() })); d.busy = false; toast('Voyage created'); S.drawer = { mode: 'edit', kind: 'voy', id }; render(); }

@@ -58,7 +58,17 @@
     else if (c === 'P0002' || /not_found/i.test(m)) code = 'not_found';
     else if (/JWT|not authenticated|401/i.test(m)) code = 'unauthenticated';
     else if (/Failed to fetch|NetworkError|network/i.test(m)) code = 'unavailable';
-    else if (c === '23505') { code = 'already_exists'; msg = kv ? `Already exists: ${kv[1]} ${kv[2]}` : 'Already exists.'; }
+    else if (c === '23505') {
+      code = 'already_exists';
+      const uq = /unique constraint "(\w+)"/.exec(m);
+      const s = sent || {};
+      msg = uq && uq[1] === 'vehicles_lot_uq' ? `Lot # ${s.tw_lot || (kv ? kv[2] : '')} is already used by another car.`
+        : uq && uq[1] === 'carriers_name_uq' ? `A carrier named "${s.name || (kv ? kv[2] : '')}" already exists. Pick it instead.`
+        : uq && uq[1] === 'customers_name_ci' ? `A customer named "${s.name || (kv ? kv[2] : '')}" already exists.`
+        : uq && /_pkey$/.test(uq[1]) ? 'A record with this ID already exists.'
+        : !uq ? m                                   // our own messages (e.g. duplicate voyage) are already clear
+        : kv ? `Already exists: ${kv[1]} ${kv[2]}` : 'Already exists.';
+    }
     else if (c === '23503') {
       code = 'failed_precondition';
       const ref = /still referenced from table "(\w+)"/.exec(det);
