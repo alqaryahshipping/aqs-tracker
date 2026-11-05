@@ -132,6 +132,19 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
 .vt-kpis-10 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.4rem), 1fr)); gap: 8px; }
 .vt-kpis-9 .vt-kpi, .vt-kpis-10 .vt-kpi { padding: 10px 12px; }
 .vt-tag.vt-tag-ok { margin-left: 6px; background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.vt-hist { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; display: flex; flex-direction: column; gap: 8px; }
+.vt-hist h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.vt-hist-l { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.vt-hist-i { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; font-size: 12.5px; }
+.vt-hist-i.is-insert { border-left-color: var(--ok); } .vt-hist-i.is-delete { border-left-color: var(--bad); } .vt-hist-i.is-update { border-left-color: var(--accent); }
+.vt-hist-h { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; }
+.vt-hist-h span { color: var(--muted); } .vt-hist-h time { color: var(--muted); margin-left: auto; font-size: 12px; white-space: nowrap; }
+.vt-hist-c { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.vt-hist-c s { color: var(--muted); } .vt-hist-f { color: var(--muted); }
+.vt-del td:last-child { white-space: nowrap; }
+.vt-del-detail td { background: var(--panel-2); cursor: default; white-space: normal; max-width: none; }
+.vt-del-dl { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: 3px 14px; margin: 4px 0; font-size: 12.5px; }
+.vt-del-dl dt { color: var(--muted); } .vt-del-dl dd { margin: 0; overflow-wrap: anywhere; }
 .vt-tag.vt-tag-bad { margin-left: 6px; background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
 .vt-fhint { display: block; font-size: 11.5px; font-weight: 400; color: var(--muted); margin-top: 3px; }
 .vt-fhint.is-ok { color: var(--ok); } .vt-fhint.is-bad { color: var(--bad); }
@@ -1477,6 +1490,140 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       h('p', { class: 'vt-note', text: `One JSON file with every shared record: ${counts}, plus rates, dropdown lists, title masters and inbox settings. Personal items (drafts, read marks, preferences) are not included. Keep the file safe: it contains all customer and vehicle data.` }),
       h('div', null, h('button', { type: 'button', class: 'vt-btn is-primary', onclick: (e) => dl(e.currentTarget) }, 'Download full backup (JSON)')),
       restore);
+  }
+  // ---------- History + Deleted records (from the database change log, public.audit_log) ----------
+  let HIST_LABELS = null;
+  function histLabel(k) {
+    if (!HIST_LABELS) {
+      HIST_LABELS = { no: 'No.', drivers: 'Drivers', exit_date: 'Exit date', exit_reason: 'Exit reason', container: 'Container', voyage_id: 'Voyage', customer_id: 'Customer',
+        decl: 'Declaration', load: 'Full / Mix', release: 'Release', tw_noshows: 'No-shows', tw_noshow_last: 'Last no-show', tw_inv_no: 'Towing invoice no.', tw_inv_amt: 'Towing invoice amount',
+        tw_cpaid: 'Carrier paid on', tw_booked: 'Booked on', tw_track: 'Tracking no.', t_appr_date: 'New title approval date', t_checked: 'Title checked on', dup_ok: 'Confirmed not a duplicate',
+        noshows: 'No-shows', blocked: 'Blocked', mc: 'MC / DOT', name: 'Name', phone: 'Phone', email: 'Email', notes: 'Notes' };
+      const lists = [VEH_FIELDS, CON_FIELDS, VOY_FIELDS, CUS_FIELDS, RATE_FIELDS, TITLE_FIELDS, DECL_FIELDS, Object.values(TW_F)];
+      for (const l of lists) for (const f of l || []) if (f && f.key && f.label && !(f.key in HIST_LABELS)) HIST_LABELS[f.key] = String(f.label).replace(/\s*\(.*?\)\s*$/, '').replace(/\s*:.*$/, '');
+    }
+    return HIST_LABELS[k] || String(k).replace(/^tw_|^t_/, '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  }
+  function histVal(k, v) {
+    if (v === null || v === undefined || v === '') return '—';
+    if (k === 'customer_id') return cusName(v) || String(v);
+    if (k === 'voyage_id') { const y = S.voy && S.voy.get(v); return y ? voyLabel(y) : String(v); }
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+  }
+  const histWhen = (t) => { const x = new Date(t); return isNaN(x) ? '' : x.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+  function histLines(e) {
+    const out = [];
+    if (e.action !== 'update') return out;
+    for (const [k, pair] of Object.entries(e.changes || {})) {
+      if (!Array.isArray(pair) || k === 'created_at' || k === 'created_by') continue;
+      if (k === 'extra') {
+        const o = pair[0] || {}, n = pair[1] || {};
+        for (const kk of new Set([...Object.keys(o), ...Object.keys(n)])) if (JSON.stringify(o[kk]) !== JSON.stringify(n[kk])) out.push([histLabel(kk), histVal(kk, o[kk]), histVal(kk, n[kk])]);
+        continue;
+      }
+      out.push([histLabel(k), histVal(k, pair[0]), histVal(k, pair[1])]);
+    }
+    return out;
+  }
+  const HIST_TABLE = { veh: 'vehicles', con: 'containers', voy: 'voyages', cus: 'customers', rate: 'rates' };
+  function histTarget(d) {
+    if (!d || !d.id || !window.SB || !SB.history) return null;
+    if (d.mode === 'edit') return HIST_TABLE[d.kind] ? [HIST_TABLE[d.kind], d.id] : null;
+    if (d.mode === 'tow' || d.mode === 'title') return ['vehicles', d.id];
+    if (d.mode === 'decl') return ['declarations', d.id];
+    if (d.mode === 'carrier') return ['carriers', d.id];
+    if (d.mode === 'pickup') return ['pickups', d.id];
+    return null;
+  }
+  const histRec = (t, id) => { const m = { vehicles: S.veh, containers: S.conRaw, voyages: S.voy, customers: S.cus, rates: S.rates, declarations: S.decl, carriers: S.carr, pickups: S.pick }[t]; return (m && m.get(id)) || {}; };
+  const histCache = new Map();
+  function histItems(rows) {
+    return rows.map((e) => {
+      const lines = histLines(e);
+      if (e.action === 'update' && !lines.length) return null;
+      const verb = e.action === 'insert' ? 'Added' : e.action === 'delete' ? 'Deleted' : 'Changed';
+      return h('li', { class: 'vt-hist-i is-' + e.action },
+        h('div', { class: 'vt-hist-h' }, h('b', { text: verb }), h('span', { text: 'by ' + e.who }), h('time', { text: histWhen(e.at) })),
+        lines.length ? h('ul', { class: 'vt-hist-c' }, lines.map(([l, o, n]) => h('li', null, h('span', { class: 'vt-hist-f', text: l + ': ' }), h('s', { text: o }), ' → ', h('span', { text: n })))) : null);
+    }).filter(Boolean);
+  }
+  // Appended to every open record (car, towing, title, container, voyage, customer, rate, declaration, carrier, pickup).
+  function attachHistory(d) {
+    const t = histTarget(d); if (!t || !drawerEl) return;
+    const body = drawerEl.querySelector('.vt-drawer-body'); if (!body) return;
+    const box = h('section', { class: 'vt-hist', 'aria-label': 'History' }, h('h4', { text: 'History' }), h('p', { class: 'vt-note', text: 'Loading…' }));
+    body.append(box);
+    const key = [t[0], t[1], histRec(t[0], t[1]).updatedAt || ''].join('|');
+    const show = (rows) => {
+      const items = histItems(rows);
+      box.replaceChildren(h('h4', { text: 'History' }),
+        items.length ? h('ol', { class: 'vt-hist-l' }, items) : null,
+        rows.some((e) => e.action === 'insert') ? null : h('p', { class: 'vt-note', text: 'Added before 5 Nov 2026, 15:35: history starts when the tracker moved to the new database.' }));
+    };
+    const c = histCache.get(key);
+    if (c) return show(c);
+    SB.history(t[0], t[1]).then((rows) => { histCache.set(key, rows); if (box.isConnected) show(rows); },
+      (e) => { const p = box.querySelector('.vt-note'); if (p) p.textContent = 'History could not be loaded: ' + errText(e); });
+  }
+  // Settings → Deleted records (Owners): who deleted what and when; Restore puts the record back as it was.
+  const DEL_KIND = { vehicles: 'Vehicle', containers: 'Container', voyages: 'Voyage', customers: 'Customer', carriers: 'Carrier', pickups: 'Pickup location', declarations: 'Declaration', rates: 'Rate' };
+  function delSummary(t, r) {
+    r = r || {};
+    const j = (a) => a.filter(Boolean).join(' · ');
+    if (t === 'vehicles') return j([r.vehicle, cusName(r.customer_id) || r.customer_id, r.tw_lot && 'Lot ' + r.tw_lot, r.shipper]);
+    if (t === 'containers') return j([r.shipper, r.booking && 'Booking ' + r.booking, cusName(r.customer_id)]);
+    if (t === 'voyages') return j([r.vessel, r.voyage_no, r.pod]);
+    if (t === 'declarations') return j([r.no, r.status, r.port]);
+    if (t === 'rates') return j([r.month, r.agent, r.line, r.origin && r.pod && `${r.origin} → ${r.pod}`, r.rate != null && fmtN(r.rate)]);
+    return r.name || '';
+  }
+  function viewDeleted() {
+    const st = S.set; st.del = st.del || { rows: null, err: '', q: '', kind: '', open: null, armed: null, busy: false };
+    const D = st.del;
+    const load = () => { D.loading = true; SB.deletedRecords(1000).then((rows) => { D.rows = rows; D.err = ''; D.loading = false; render(); }, (e) => { D.err = errText(e); D.rows = []; D.loading = false; render(); }); };
+    if (!D.rows && !D.loading) load();
+    const restore = async (row, btn) => {
+      if (D.armed !== row.audit_id) { D.armed = row.audit_id; render(); return; }
+      D.armed = null; D.busy = true; btn.disabled = true; btn.textContent = 'Restoring…';
+      try { await SB.restoreDeleted(row.audit_id); toast(`${row.record_id} restored`); }
+      catch (e) { toast(errText(e), true); }
+      D.busy = false; load();
+    };
+    const q = norm(D.q).toLowerCase();
+    const rows = (D.rows || []).filter((r) => (!D.kind || r.table_name === D.kind)
+      && (!q || [r.record_id, r.who, DEL_KIND[r.table_name], delSummary(r.table_name, r.record)].join(' ').toLowerCase().includes(q)));
+    const detail = (r) => h('tr', { class: 'vt-del-detail' }, h('td', { colspan: 6 },
+      h('dl', { class: 'vt-del-dl' }, Object.entries(r.record || {}).filter(([k, v]) => v !== null && v !== '' && !['created_by', 'updated_by'].includes(k) && !(k === 'extra' && !Object.keys(v || {}).length))
+        .flatMap(([k, v]) => k === 'extra' ? Object.entries(v).map(([kk, vv]) => [histLabel(kk), histVal(kk, vv)]) : [[k === 'created_at' ? 'Added on' : k === 'updated_at' ? 'Last changed' : histLabel(k), k.endsWith('_at') ? histWhen(v) : histVal(k, v)]])
+        .flatMap(([l, v]) => [h('dt', { text: l }), h('dd', { text: v })]))));
+    const body = rows.flatMap((r) => {
+      const restored = !!r.restored_at;
+      const tr = h('tr', { onclick: () => { D.open = D.open === r.audit_id ? null : r.audit_id; render(); }, title: 'Click to see the record as it was' },
+        h('td', { text: histWhen(r.at) }),
+        h('td', { text: DEL_KIND[r.table_name] || r.table_name }),
+        h('td', { class: 'mono', text: r.record_id }),
+        h('td', { text: delSummary(r.table_name, r.record) }),
+        h('td', { text: r.who }),
+        h('td', { onclick: (e) => e.stopPropagation() }, restored
+          ? h('span', { class: 'vt-tag vt-tag-ok', text: `Restored ${histWhen(r.restored_at)}${r.restored_by ? ' by ' + r.restored_by : ''}` })
+          : h('button', { type: 'button', class: 'vt-btn is-sm' + (D.armed === r.audit_id ? ' is-armed is-danger' : ''), disabled: D.busy, onclick: (e) => restore(r, e.currentTarget) }, D.armed === r.audit_id ? 'Click again to restore' : 'Restore')));
+      return D.open === r.audit_id ? [tr, detail(r)] : [tr];
+    });
+    const kinds = [...new Set((D.rows || []).map((r) => r.table_name))];
+    return h('section', { class: 'vt-card-box' },
+      h('div', { class: 'vt-boxhead' }, h('h2', { text: 'Deleted records' }), h('button', { type: 'button', class: 'vt-btn is-sm', onclick: load }, 'Refresh')),
+      h('p', { class: 'vt-note', text: 'Every record deleted in the tracker since 5 Nov 2026, with who deleted it and when. Click a row to see the record as it was. Restore puts it back exactly as it was (it is refused if a record with the same ID has been added again, or if something it links to, such as its customer, no longer exists).' }),
+      h('div', { class: 'vt-tools' },
+        h('label', { class: 'vt-f is-wide' }, h('span', { text: 'Search' }), h('input', { type: 'search', value: D.q, placeholder: 'VIN, container, name, user…', oninput: (e) => { D.q = e.target.value; render(); } })),
+        h('label', { class: 'vt-f' }, h('span', { text: 'Type' }), select([['', 'All types'], ...kinds.map((k) => [k, DEL_KIND[k] || k])], D.kind, (v) => { D.kind = v; render(); }, 'Type', null))),
+      D.err ? h('p', { class: 'vt-msg is-bad', text: D.err }) : null,
+      !D.rows ? h('p', { class: 'vt-note', text: 'Loading…' })
+        : !rows.length ? h('div', { class: 'vt-empty' }, h('b', { text: D.rows.length ? 'No deleted records match' : 'Nothing has been deleted yet' }))
+        : h('div', { class: 'vt-tablebox' }, h('table', { class: 'vt-table vt-del' },
+          h('thead', null, h('tr', null, ['Deleted on', 'Type', 'ID', 'Record', 'Deleted by', ''].map((x) => h('th', { text: x })))),
+          h('tbody', null, body))),
+      h('p', { class: 'vt-count', text: D.rows ? `${fmtN(rows.length)} of ${fmtN(D.rows.length)} deletions` : '' }));
   }
   // Settings → Users (owners)
   function viewUsers() {
@@ -3057,7 +3204,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       formFor(DECL_FIELDS, d, ro, isNew),
       h('div', { class: 'vt-sublist' }, h('h4', { text: `Containers on this declaration (${members.length})${removedN ? ` · ${removedN} to be removed on save` : ''}` }), list),
       picker, msgEl(d),
-    ], ro ? null : [rec && S.canAdmin ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete declaration') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', disabled: !!d.busy, onclick: save }, isNew ? 'Create declaration' : 'Save changes')], true);
+    ], ro ? null : [rec && S.canWrite ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete declaration') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', disabled: !!d.busy, onclick: save }, isNew ? 'Create declaration' : 'Save changes')], true);
   }
   function viewOnHand() {
     const f = S.of; const base = [...S.veh.values()].filter(isOnHand);
@@ -3389,6 +3536,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       { g: 'You', id: 'prefs', label: 'My preferences', view: viewPrefs },
       ...(S.canAdmin ? [{ g: 'Access', id: 'users', label: 'Users and passwords', n: S.auth.users.length, view: viewUsers }] : []),
       ...(S.canAdmin ? [{ g: 'Access', id: 'backup', label: 'Full backup / restore', view: viewBackup }] : []),
+      ...(S.canAdmin && window.SB && SB.deletedRecords ? [{ g: 'Access', id: 'deleted', label: 'Deleted records', view: viewDeleted }] : []),
       { g: 'Operations', id: 'inbox', label: 'Inbox owners & thresholds', view: viewInboxSettings },
       { g: 'Masters', id: 'partners', label: 'Partners (loaders, agents)', n: (S.partners || []).length, view: viewPartners },
       { g: 'Masters', id: 'pickups', label: 'Pickup locations', n: pickups().length, warn: pickups().filter((p) => !hasStreet(p)).length, view: () => pickupsDrawer(true) },
@@ -3585,6 +3733,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const banner = draftBanner(d); const bodyEl = drawerEl.querySelector('.vt-drawer-body'); if (banner && bodyEl) bodyEl.prepend(banner);
     drawerEl.addEventListener('input', draftSoon); drawerEl.addEventListener('change', draftSoon);
     document.body.append(drawerEl);
+    attachHistory(d);
     const b = drawerEl.querySelector('.vt-drawer-body'); if (b && prevScroll) b.scrollTop = prevScroll;
     if (d.focusTow && !d.focusedTow) { d.focusedTow = true; d.focused = true; setTimeout(() => { const tb = drawerEl && drawerEl.querySelector('#veh-tow-box'); if (tb) tb.scrollIntoView({ block: 'start' }); }, 30); }
     if (d.focusTitle && !d.focusedTitle) { d.focusedTitle = true; d.focused = true; setTimeout(() => { const tb = drawerEl && drawerEl.querySelector('#veh-title-box'); if (tb) tb.scrollIntoView({ block: 'start' }); }, 30); }
@@ -4033,7 +4182,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       if (!d.armed) { d.armed = true; btn.classList.add('is-armed'); btn.textContent = 'Click again to delete for good'; return; }
       try { await write(() => coll('veh').doc(rec.id).delete()); toast(`${rec.id} deleted`); closeDrawer(); } catch (e) { setMsg(d, errText(e), true); }
     };
-    const delBtn = rec && !ro && !rec.container && S.canAdmin ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete (entry mistake)') : h('span');
+    const delBtn = rec && !ro && !rec.container && S.canWrite ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete (entry mistake)') : h('span');
     const title = isNew ? 'Add vehicle' : (rec.vehicle || rec.id);
     // status strip: each status is worked on its own screen
     const strip = rec ? (() => {
@@ -4283,7 +4432,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       !d.form.load ? h('p', { class: 'vt-note', text: 'Full = one customer per container. Mix = several customers\' cars with one common consignee.' }) : isMix ? consigneePicker(d, ro, rec) : customerPicker(d, ro),
       formFor(CON_FIELDS, d, ro, isNew),
       carsBox, msgEl(d),
-    ], ro ? null : [rec && S.canAdmin ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete container') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', onclick: save }, isNew ? 'Add container' : 'Save changes')], true);
+    ], ro ? null : [rec && S.canWrite ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete container') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', onclick: save }, isNew ? 'Add container' : 'Save changes')], true);
   }
 
   // --- customer drawer
@@ -4346,7 +4495,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     return shell(isNew ? 'Add customer' : rec.name, [
       sys ? h('div', { class: 'vt-banner', text: 'System placeholder for containers that had no consignee. It can\'t be edited: open each container below and pick its real customer.' }) : (!S.canWrite ? h('p', { class: 'vt-note', text: 'Read-only: you can view this customer but not change it.' }) : null),
       formFor(CUS_FIELDS, d, ro, isNew), mergeBox, consBox, msgEl(d),
-    ], ro ? null : [rec && S.canAdmin ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete customer') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', onclick: save }, isNew ? 'Add customer' : 'Save changes')], true);
+    ], ro ? null : [rec && S.canWrite ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete customer') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', onclick: save }, isNew ? 'Add customer' : 'Save changes')], true);
   }
 
   // --- voyage drawer
@@ -4416,7 +4565,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       d.back ? h('button', { type: 'button', class: 'vt-btn is-sm vt-backbtn', onclick: () => { S.drawer = d.back; render(); } }, d.back.kind === 'con' ? `← Back to container ${d.back.id || ''}` : '← Back') : null,
       locked ? h('div', { class: 'vt-banner is-lock', text: 'Closed: this voyage has arrived and every container on it is cleared, so it can no longer be changed.' }) : (!S.canWrite ? h('p', { class: 'vt-note', text: 'Read-only: you can view this voyage but not change it.' }) : h('p', { class: 'vt-note', text: 'Vessel, dates, port and status set here show on every container of this voyage. Status: Planned, then Sailed (containers show "On the water"), then Arrived.' })),
       formFor(VOY_FIELDS, d, ro, isNew), consBox, msgEl(d),
-    ], ro ? null : [rec && S.canAdmin ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete voyage') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', onclick: save }, isNew ? 'Create voyage' : 'Save voyage')], true);
+    ], ro ? null : [rec && S.canWrite ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete voyage') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', onclick: save }, isNew ? 'Create voyage' : 'Save voyage')], true);
   }
 
   // ---------- paste from Excel ----------

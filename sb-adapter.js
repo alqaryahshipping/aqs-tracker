@@ -285,6 +285,23 @@
     return { done, failed, errors };
   }
 
+  // ---------- record history and deleted records (change log in public.audit_log) ----------
+  async function history(table, id) {
+    const { data, error } = await sb.rpc('record_history', { p_table: table, p_id: String(id) });
+    if (error) throw mapErr(error);
+    return data || [];
+  }
+  async function deletedRecords(limit) {
+    const { data, error } = await sb.rpc('deleted_records', { p_limit: limit || 500 });
+    if (error) throw mapErr(error);
+    return data || [];
+  }
+  async function restoreDeleted(auditId) {
+    const { data, error } = await sb.rpc('restore_deleted', { p_audit_id: auditId });
+    if (error) throw mapErr(error);
+    return data;
+  }
+
   // ---------- auth + profile ----------
   const SB = {
     client: sb,
@@ -293,6 +310,9 @@
     _waiters: [],
     shortName,
     restore,
+    history,
+    deletedRecords,
+    restoreDeleted,
     async refresh() {
       const { data } = await sb.auth.getSession();
       SB.session = data.session || null;
