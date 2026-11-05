@@ -18,6 +18,11 @@ page = (ROOT / 'index.html').read_text(encoding='utf-8')
 live_scripts = '<script src="config.js"></script>\n<script src="supabase.js"></script>\n<script src="sb-adapter.js"></script>'
 assert page.count(live_scripts) == 1, 'live script tags not found: index.html changed shape'
 page = page.replace(live_scripts, '<script src="design-adapter.js"></script>')
+# claude.ai installs its own window.claude on the page after our scripts, which would replace the design
+# stand-in; so the design copy calls the stand-in under its own name (window.AQS_RT) instead.
+n = page.count("claude.use(")
+assert n >= 4, 'expected the tracker to call claude.use()'
+page = page.replace("claude.use(", "AQS_RT.use(")
 # the artifact host supplies <!doctype>, <html>, <head>, <body>, charset and viewport
 for pat in [r'<!doctype html>\s*', r'<html[^>]*>\s*', r'</?head>\s*', r'<body>\s*', r'</body>\s*', r'</html>\s*',
             r'<meta charset="utf-8">\s*', r'<meta name="viewport"[^>]*>\s*', r'<meta name="robots"[^>]*>\s*']:

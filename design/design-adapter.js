@@ -247,7 +247,7 @@
     async bootstrap() { return SB.refresh(); },
   };
   window.SB = SB;
-  window.claude = {
+  window.AQS_RT = window.claude = {
     use: async (name) => {
       if (name === 'db') { await SB.whenSignedIn(); return db; }
       if (name === 'user') { await SB.whenSignedIn(); return { can: async () => true, canEdit: async () => ME.role === 'owner', id: async () => ME.user_id }; }
