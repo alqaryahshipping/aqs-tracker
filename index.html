@@ -2651,6 +2651,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       S.canWrite ? h('button', { class: 'vt-btn', type: 'button', onclick: () => { S.drawer = { mode: 'trecv', text: '', date: TODAY_ISO }; render(); } }, 'Mark received (VIN list)') : null);
     const cols = [
       { key: 'vin', label: 'VIN', mono: true, copy: true },
+      { key: 'tw_lot', label: 'Lot #', mono: true, copy: true, render: (r) => r.tw_lot || h('span', { class: 'vt-muted', text: '—' }) },
       { key: 'vehicle', label: 'Vehicle' },
       { key: 'customer', label: 'Customer', render: (r) => vehCustomer(r) },
       { key: 'buyer', label: 'Buyer account', render: (r) => r.buyer || h('span', { class: 'vt-muted', text: 'not set' }) },
@@ -2741,6 +2742,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       S.canWrite && sub === 'onhand' ? h('button', { class: 'vt-btn is-primary', type: 'button', onclick: () => openEditor('veh', null) }, 'Add vehicle') : null);
     const base = [
       { key: 'vin', label: 'VIN', mono: true, copy: true, render: (r) => lockedVeh(r) ? h('span', null, r.vin, lockTag()) : r.vin },
+      { key: 'tw_lot', label: 'Lot #', mono: true, copy: true, render: (r) => r.tw_lot || h('span', { class: 'vt-muted', text: '—' }) },
       { key: 'vehicle', label: 'Vehicle', render: (r) => r.electric === 'Yes' ? h('span', null, r.vehicle || '', h('span', { class: 'vt-tag vt-ev', title: 'Electric / dangerous goods: needs DGD', text: 'EV' })) : r.vehicle },
       { key: 'shipper', label: 'Loader' },
       { key: 'customer', label: 'Customer', render: (r) => vehCustomer(r) },
@@ -2762,7 +2764,6 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       { key: 'buyer', label: 'Buyer' }, { key: 'remarks', label: 'Remarks' },
     ] : [...base,
       { key: 'buyer', label: 'Buyer' },
-      { key: 'tw_lot', label: 'Lot #', mono: true },
       { key: 'price', label: 'Price', num: true, render: (r) => r.price == null || r.price === '' ? '' : fmtN(r.price) },
       { key: 'purchased', label: 'Purchased', render: (r) => fmtD(r.purchased) },
       { key: 'arrived', label: 'At yard since', render: (r) => fmtD(r.arrived) },
@@ -3276,7 +3277,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
           h('span', { class: 'vt-count', text: `${fmtN(lr.length)} vehicles · value ${money(sum(lr), true)}` }),
           f.pick ? h('button', { class: 'vt-btn', type: 'button', onclick: () => { f.pick = null; render(); } }, 'Close list') : null),
         ...table([
-          { key: 'vin', label: 'VIN', mono: true, copy: true }, { key: 'vehicle', label: 'Vehicle' }, { key: 'shipper', label: 'Loader' },
+          { key: 'vin', label: 'VIN', mono: true, copy: true }, { key: 'tw_lot', label: 'Lot #', mono: true, copy: true, render: (r) => r.tw_lot || h('span', { class: 'vt-muted', text: '—' }) }, { key: 'vehicle', label: 'Vehicle' }, { key: 'shipper', label: 'Loader' },
           { key: 'status', label: 'Status' }, { key: 'tstage', label: 'Title stage', render: (r) => titlePill(r) },
           { key: 'price', label: 'Price', num: true, render: (r) => fmtN(r.price) }, { key: 'arrived', label: 'Arrived', render: (r) => fmtD(r.arrived) },
           { key: 'days', label: 'Days', num: true, render: (r) => daysIn(r), cls: (r) => (daysIn(r) || 0) > 90 ? 'is-old' : '' },
@@ -3987,8 +3988,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   function bulkPayDrawer(d) {
     if (!d.init) { d.init = true; d.sel = new Set(); d.date = TODAY_ISO; d.tcase = 'AQS account'; d.gates = {}; d.q = ''; d.sort = ['purchased', 'asc']; d.fc = ''; d.fb = ''; d.fa = ''; d.from = ''; d.to = ''; }
     // click a column heading to sort by it; click again to switch ascending / descending
-    const BP_COLS = [['vin', 'VIN', (v) => v.vin], ['vehicle', 'Vehicle', (v) => v.vehicle], ['customer', 'Customer', (v) => vehCustomer(v)], ['buyer', 'Buyer account', (v) => v.buyer],
-      ['lot', 'Lot #', (v) => v.tw_lot], ['purchased', 'Purchased', (v) => v.purchased]];
+    const BP_COLS = [['vin', 'VIN', (v) => v.vin], ['lot', 'Lot #', (v) => v.tw_lot], ['vehicle', 'Vehicle', (v) => v.vehicle], ['customer', 'Customer', (v) => vehCustomer(v)],
+      ['buyer', 'Buyer account', (v) => v.buyer], ['purchased', 'Purchased', (v) => v.purchased]];
     const [sk, sd] = d.sort; const sval = (BP_COLS.find((c) => c[0] === sk) || BP_COLS[5])[2];
     const cmp = (a, b) => { const x = norm(sval(a)), y = norm(sval(b)); if (!x && y) return 1; if (x && !y) return -1; const r = x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' }); return (sd === 'desc' ? -r : r) || String(a.vin).localeCompare(String(b.vin)); };
     const cars = [...S.veh.values()].filter((v) => towStage(v) === 'purchased' && !v.exit_reason && !v.container).sort(cmp);
@@ -4008,8 +4009,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       const gate = h('input', { class: 'vt-inline', type: 'text', value: d.gates[v.vin] ?? v.tw_gate ?? '', placeholder: 'Gate PIN', 'aria-label': `Gate PIN for ${v.vin}`, oninput: (e) => { d.gates[v.vin] = e.target.value; } });
       const hay = [v.vin, v.vehicle, v.buyer, v.tw_lot, vehCustomer(v)].map((x) => norm(x).toLowerCase()).join(' ');
       const tr = h('tr', { onclick: (e) => { if (e.target.tagName !== 'INPUT') { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } } },
-        h('td', null, cb), h('td', { class: 'mono', text: v.vin }), h('td', { text: v.vehicle || '' }), h('td', { text: vehCustomer(v) }),
-        h('td', { text: v.buyer || '' }), h('td', { class: 'mono', text: v.tw_lot || '' }), h('td', { text: v.purchased ? fmtD(v.purchased) : '' }), h('td', null, gate));
+        h('td', null, cb), h('td', { class: 'mono', text: v.vin }), h('td', { class: 'mono', text: v.tw_lot || '' }), h('td', { text: v.vehicle || '' }), h('td', { text: vehCustomer(v) }),
+        h('td', { text: v.buyer || '' }), h('td', { text: v.purchased ? fmtD(v.purchased) : '' }), h('td', null, gate));
       return { vin: v.vin, tr, hay, cus: cusIdOf(v) || '', buyer: v.buyer || '', auc: auctionOf(v) || '', pur: v.purchased || '' };
     });
     const all = rowEls.length ? h('input', { type: 'checkbox', 'aria-label': 'Select all shown', onchange: (e) => { for (const r of rowEls) if (!r.tr.hidden) { if (e.target.checked) d.sel.add(r.vin); else d.sel.delete(r.vin); r.tr.querySelector('input[type=checkbox]').checked = e.target.checked; } sync(); } }) : null;
