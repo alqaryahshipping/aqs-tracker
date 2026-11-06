@@ -4283,6 +4283,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const p = {};
     if (!norm(v.arrived)) p.arrived = date;                                    // towing: delivered to the yard
     if (pay && norm(v.tw_carrier) && !norm(v.tw_cpaid) && !v.tw_src) p.tw_cpaid = date; // towing: carrier paid
+    if (!v.tw_src && (p.arrived || !norm(v.tw_carrier))) p.tw_src = `Owner bypass ${date}`;  // closed outside the steps: no carrier / pickup warnings
     if (!titleLoadable(v) || v.t_vin_ok === 'No') {                             // title: received at the yard, VIN OK
       p.t_loc = 'yard'; if (!norm(v.t_recv)) p.t_recv = date; p.t_vin_ok = 'Yes'; if (!norm(v.t_checked)) p.t_checked = date;
       const e = titleElig(v);
