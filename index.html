@@ -3330,7 +3330,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     ], ro ? null : [rec && S.canWrite ? h('button', { class: 'vt-btn is-danger', type: 'button', onclick: (e) => del(e.currentTarget) }, 'Delete declaration') : h('span'), h('button', { class: 'vt-btn is-primary', type: 'button', disabled: !!d.busy, onclick: save }, isNew ? 'Create declaration' : 'Save changes')], true);
   }
   function viewOnHand() {
-    const f = S.of; const base = [...S.veh.values()].filter(isOnHand);
+    // the yard's stock: cars delivered to the loading yard, not yet loaded or exited (cars still at auction / in towing are on the Towing board)
+    const f = S.of; const base = [...S.veh.values()].filter((v) => isOnHand(v) && !v.container && !!norm(v.arrived));
     const q = f.q.trim().toLowerCase();
     const pre = base.filter((v) => (!f.shipper || v.shipper === f.shipper) && (!f.status || v.status === f.status) && (!f.title || titleStage(v) === f.title) && (!f.buyer || norm(v.buyer) === f.buyer) && inM(f.customer, cusIdOf(v)) && inM(f.yard, v.yard) && inM(f.auction, auctionOf(v)) && inM(f.days, dayBand(daysIn(v)))
       && (!q || [v.vin, v.vehicle, v.remarks].some((x) => norm(x).toLowerCase().includes(q))));
