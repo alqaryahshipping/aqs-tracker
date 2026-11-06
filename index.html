@@ -2691,7 +2691,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   // same scope as the Titles screen ("Cars in yard" or "All cars")
   const tcheckable = (v) => titleStage(v) === 'unchecked' && !lockedVeh(v) && (S.tf.scope === 'all' || (isOnHand(v) && !v.container));
   function titleCheckDrawer(d) {
-    if (!d.init) { d.init = true; d.sel = new Set(); d.date = TODAY_ISO; d.ttype = ''; d.elig = ''; d.loc = ''; d.states = {}; d.q = ''; d.sort = ['days', 'desc']; d.fc = ''; d.fb = ''; d.fa = ''; d.fl = ''; }
+    if (!d.init) { d.init = true; d.sel = new Set(); d.date = TODAY_ISO; d.ttype = ''; d.elig = ''; d.loc = ''; d.states = {}; d.q = ''; d.sort = ['days', 'desc']; d.fc = ''; d.fb = ''; d.fa = ''; d.fl = ''; d.fs = ''; d.fy = ''; d.fd = ''; d.from = ''; d.to = ''; }
     const TC_COLS = [['vin', 'VIN', (v) => v.vin], ['lot', 'Lot #', (v) => v.tw_lot], ['vehicle', 'Vehicle', (v) => v.vehicle], ['customer', 'Customer', (v) => vehCustomer(v)],
       ['buyer', 'Buyer account', (v) => v.buyer], ['days', 'Days at yard', (v) => daysIn(v) == null ? '' : String(daysIn(v)).padStart(5, '0')], ['loc', 'Title status (where)', (v) => titleLocRaw(v) ? locLabel(titleLocRaw(v)) : '']];
     const [sk, sd] = d.sort; const sval = (TC_COLS.find((c) => c[0] === sk) || TC_COLS[5])[2];
@@ -2716,20 +2716,22 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       const tr = h('tr', { onclick: (e) => { if (e.target.tagName !== 'INPUT') { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } } },
         h('td', null, cb), h('td', { class: 'mono', text: v.vin }), h('td', { class: 'mono', text: v.tw_lot || '' }), h('td', { text: v.vehicle || '' }), h('td', { text: vehCustomer(v) }),
         h('td', { text: v.buyer || '' }), h('td', { text: daysIn(v) ?? '' }), h('td', { text: titleLocRaw(v) ? locLabel(titleLocRaw(v)) : '' }), h('td', null, st));
-      return { vin: v.vin, tr, hay, cus: cusIdOf(v) || '', buyer: v.buyer || '', auc: auctionOf(v) || '', loc: titleLocRaw(v) || '__none' };
+      return { vin: v.vin, tr, hay, cus: cusIdOf(v) || '', buyer: v.buyer || '', auc: auctionOf(v) || '', loc: titleLocRaw(v) || '__none', ship: v.shipper || '__none', yard: v.yard || '__none', band: dayBand(daysIn(v)), pur: v.purchased || '' };
     });
     const all = rowEls.length ? h('input', { type: 'checkbox', 'aria-label': 'Select all shown', onchange: (e) => { for (const r of rowEls) if (!r.tr.hidden) { if (e.target.checked) d.sel.add(r.vin); else d.sel.delete(r.vin); r.tr.querySelector('input[type=checkbox]').checked = e.target.checked; } sync(); } }) : null;
     const shownEl = h('span');
     const filter = () => {
       const q = norm(d.q).toLowerCase();
-      for (const r of rowEls) r.tr.hidden = (!!q && !r.hay.includes(q)) || (!!d.fc && r.cus !== d.fc) || (!!d.fb && r.buyer !== d.fb) || (!!d.fa && r.auc !== d.fa) || (!!d.fl && r.loc !== d.fl);
+      for (const r of rowEls) r.tr.hidden = (!!q && !r.hay.includes(q)) || (!!d.fc && r.cus !== d.fc) || (!!d.fb && r.buyer !== d.fb) || (!!d.fa && r.auc !== d.fa) || (!!d.fl && r.loc !== d.fl)
+        || (!!d.fs && r.ship !== d.fs) || (!!d.fy && r.yard !== d.fy) || (!!d.fd && r.band !== d.fd) || (!!d.from && (!r.pur || r.pur < d.from)) || (!!d.to && (!r.pur || r.pur > d.to));
       shownEl.textContent = `${fmtN(rowEls.filter((r) => !r.tr.hidden).length)} shown · `;
       sync();
     };
     const optsOf = (get, label) => [...new Map(cars.map((v) => [get(v), label(v)]).filter(([k]) => k)).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])))
       .map(([k, l]) => [k, `${l} (${fmtN(cars.filter((v) => get(v) === k).length)})`]);
     const fsel = (label, key, opts, allL) => h('label', { class: 'vt-f' }, h('span', { text: label }), select(opts, d[key], (v) => { d[key] = v; filter(); }, label, allL));
-    const clearF = () => { d.q = ''; d.fc = ''; d.fb = ''; d.fa = ''; d.fl = ''; redrawDrawer(); };
+    const clearF = () => { d.q = ''; d.fc = ''; d.fb = ''; d.fa = ''; d.fl = ''; d.fs = ''; d.fy = ''; d.fd = ''; d.from = ''; d.to = ''; redrawDrawer(); };
+    const fdate = (label, key) => h('label', { class: 'vt-f' }, h('span', { text: label }), h('input', { type: 'date', value: d[key], 'aria-label': label, onchange: (e) => { d[key] = e.target.value; filter(); } }));
     const run = async () => {
       if (!d.sel.size || d.busy) return;
       const eligNow = eligOf();
@@ -2768,6 +2770,10 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
         fsel('Buyer account', 'fb', optsOf((v) => v.buyer, (v) => v.buyer), 'All buyer accounts'),
         fsel('Auction', 'fa', optsOf((v) => auctionOf(v), (v) => auctionOf(v)), 'All auctions'),
         fsel('Title status', 'fl', optsOf((v) => titleLocRaw(v) || '__none', (v) => titleLocRaw(v) ? locLabel(titleLocRaw(v)) : 'Not recorded'), 'Anywhere'),
+        fsel('Loader', 'fs', optsOf((v) => v.shipper || '__none', (v) => v.shipper || 'Loader not set'), 'All loaders'),
+        fsel('Loading yard', 'fy', optsOf((v) => v.yard || '__none', (v) => v.yard ? withCountry(v.yard) : 'Yard not set'), 'All yards'),
+        fsel('Days at yard', 'fd', [...DAY_BANDS, ['__none', 'Not at yard yet']].map(([k, l]) => [k, `${l} (${fmtN(cars.filter((v) => dayBand(daysIn(v)) === k).length)})`]).filter((o) => !/\(0\)$/.test(o[1])), 'Any days'),
+        fdate('Purchased from', 'from'), fdate('Purchased to', 'to'),
         h('button', { class: 'vt-btn vt-clear', type: 'button', onclick: clearF }, 'Clear filters'),
         h('span', { class: 'vt-spacer' }), h('span', { class: 'vt-count' }, shownEl, count, ` of ${fmtN(cars.length)} selected`)) : null,
       cars.length ? h('div', { class: 'vt-tablebox' }, h('table', { class: 'vt-table vt-bulkpay' },
