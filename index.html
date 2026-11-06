@@ -2640,11 +2640,14 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       && (!f.elig || (f.elig === '__none' ? !titleElig(v) : titleElig(v) === f.elig))
       && (!arr(f.days).length || arr(f.days).includes(dayBand(daysIn(v))))
       && (!q || [v.vin, v.vehicle, v.buyer, v.shipper, v.yard, v.t_track, v.t_state, v.t_type, v.t_supplier, v.t_remarks, vehCustomer(v), locLabel(titleLocRaw(v))].some((x) => norm(x).toLowerCase().includes(q))));
-    const rows0 = f.stage ? pre.filter((v) => titleStage(v) === f.stage) : pre;
+    // at the loading yard (car delivered, not loaded) but the title is not loadable yet
+    const yardIssue = (v) => !v.container && isOnHand(v) && !!norm(v.arrived) && !titleLoadable(v);
+    const rows0 = f.stage === '__yardissue' ? pre.filter(yardIssue) : f.stage ? pre.filter((v) => titleStage(v) === f.stage) : pre;
     const rows = sortRows(rows0, f.sort, (r, k) => k === 'days' ? daysIn(r) : k === 'stage' ? TSTAGES.findIndex((s) => s.id === titleStage(r)) : k === 'customer' ? vehCustomer(r) : k === 'next' ? titleNext(r).text : k === 'loc' ? locLabel(titleLoc(r)) : r[k]);
     const set = (k) => (v) => { f[k] = v; render(); };
     const cards = h('div', { class: 'vt-kpis vt-kpis-10' },
       kpi('All', fmtN(pre.length), { onclick: () => { f.stage = ''; render(); }, active: !f.stage, hint: `${fmtN(pre.filter(titleLoadable).length)} loadable` }),
+      kpi('At yard · title issue', fmtN(pre.filter(yardIssue).length), { dot: 'var(--bad)', onclick: () => { f.stage = f.stage === '__yardissue' ? '' : '__yardissue'; render(); }, active: f.stage === '__yardissue', hint: 'not loadable yet' }),
       ...TSTAGES.map((s) => { const n = pre.filter((v) => titleStage(v) === s.id); const late = n.filter((v) => titleNext(v).lvl === 'bad').length;
         return kpi(s.label, fmtN(n.length), { dot: s.color, onclick: () => { f.stage = f.stage === s.id ? '' : s.id; render(); }, active: f.stage === s.id, hint: late ? `${fmtN(late)} need action` : '' }); }));
     const yards = [...L('origins').map((o) => [o, o]), ['__none', 'Yard not set']];
