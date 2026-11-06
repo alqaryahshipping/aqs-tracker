@@ -2859,6 +2859,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       { key: 'tw_lot', label: 'Lot #', mono: true, copy: true, render: (r) => r.tw_lot || h('span', { class: 'vt-muted', text: '—' }) },
       { key: 'vehicle', label: 'Vehicle', render: (r) => r.electric === 'Yes' ? h('span', null, r.vehicle || '', h('span', { class: 'vt-tag vt-ev', title: 'Electric / dangerous goods: needs DGD', text: 'EV' })) : r.vehicle },
       { key: 'shipper', label: 'Loader' },
+      { key: 'yard', label: 'Yard', render: (r) => r.yard ? withCountry(r.yard) : h('span', { class: 'vt-muted', text: '—' }) },
       { key: 'customer', label: 'Customer', render: (r) => vehCustomer(r) },
     ];
     const cols = sub === 'shipped' ? [...base,
