@@ -2743,6 +2743,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       field('Title stage', mselect(TSTAGES.map((s) => [s.id, s.label]), f.title, set('title'), 'Title stage filter', 'Any stage')),
       field('Electric / DG', mselect([['Yes', `Electric / DG (${fmtN(groups[sub].filter((v) => v.electric === 'Yes').length)})`], ['No', 'Non-electric']], f.ev, set('ev'), 'Electric dangerous goods filter', 'All vehicles')),
       h('span', { class: 'vt-spacer' }),
+      S.canAdmin && sub === 'onhand' ? h('button', { class: 'vt-btn', type: 'button', title: 'Owner: mark many cars ready to load or delivered, bypassing towing, title and shipping', onclick: () => { S.drawer = { mode: 'bulkstatus' }; render(); } }, 'Bulk status') : null,
       S.canWrite && sub === 'onhand' ? h('button', { class: 'vt-btn', type: 'button', onclick: () => openPaste('veh') }, 'Bulk entry / Import') : null,
       S.canWrite && sub === 'onhand' ? h('button', { class: 'vt-btn is-primary', type: 'button', onclick: () => openEditor('veh', null) }, 'Add vehicle') : null);
     const base = [
@@ -3826,7 +3827,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     if (d.mode === 'edit' || d.mode === 'paste') restoreDraft(d);
     const prevScroll = drawerEl ? (drawerEl.querySelector('.vt-drawer-body') || {}).scrollTop : 0;
     if (drawerEl) drawerEl.remove();
-    const body = d.mode === 'bulkpay' ? bulkPayDrawer(d) : d.mode === 'pickup' ? pickupDrawer(d) : d.mode === 'pickups' ? pickupsDrawer() : d.mode === 'tow' ? towDrawer(d) : d.mode === 'decl' ? declDrawer(d) : d.mode === 'title' ? titleDrawer(d) : d.mode === 'carrier' ? carrierDrawer(d) : d.mode === 'carriers' ? carriersDrawer() : d.mode === 'trecv' ? titleRecvDrawer(d) : d.mode === 'drafts' ? draftsDrawer() : d.mode === 'paste' ? pasteDrawer(d) : d.kind === 'voy' ? voyDrawer(d) : d.kind === 'cus' ? cusDrawer(d) : d.kind === 'rate' ? rateDrawer(d) : d.kind === 'con' ? conDrawer(d) : vehDrawer(d);
+    const body = d.mode === 'bulkpay' ? bulkPayDrawer(d) : d.mode === 'bulkstatus' ? bulkStatusDrawer(d) : d.mode === 'pickup' ? pickupDrawer(d) : d.mode === 'pickups' ? pickupsDrawer() : d.mode === 'tow' ? towDrawer(d) : d.mode === 'decl' ? declDrawer(d) : d.mode === 'title' ? titleDrawer(d) : d.mode === 'carrier' ? carrierDrawer(d) : d.mode === 'carriers' ? carriersDrawer() : d.mode === 'trecv' ? titleRecvDrawer(d) : d.mode === 'drafts' ? draftsDrawer() : d.mode === 'paste' ? pasteDrawer(d) : d.kind === 'voy' ? voyDrawer(d) : d.kind === 'cus' ? cusDrawer(d) : d.kind === 'rate' ? rateDrawer(d) : d.kind === 'con' ? conDrawer(d) : vehDrawer(d);
     drawerEl = h('div', null, h('div', { class: 'vt-drawer-bg', onclick: () => { if (!d.busy) closeDrawer(); } }), body);
     drawerEl.dataset.sig = sig(d);
     const banner = draftBanner(d); const bodyEl = drawerEl.querySelector('.vt-drawer-body'); if (banner && bodyEl) bodyEl.prepend(banner);
@@ -4160,6 +4161,112 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     ];
     setTimeout(() => { filter(); }, 0);
     return shell('Bulk payment: auction paid / release', body, [h('button', { class: 'vt-btn', type: 'button', onclick: () => { if (!d.busy) closeDrawer(); } }, 'Cancel'), go], 'xl');
+  }
+  // ---------- Owner bypass: mark many cars "Ready to load" or "Delivered" (shipped without a container) ----------
+  // Fills in what the skipped towing and title steps would have recorded, so the car drops off those lists.
+  // Every change is written to the car's History with who and when.
+  function bypassPatch(v, mode, date) {
+    const p = {};
+    if (!norm(v.arrived)) p.arrived = date;                       // towing: delivered to the yard
+    if (!titleLoadable(v) || v.t_vin_ok === 'No') {                // title: received at the yard, VIN OK
+      p.t_loc = 'yard'; if (!norm(v.t_recv)) p.t_recv = date; p.t_vin_ok = 'Yes'; if (!norm(v.t_checked)) p.t_checked = date;
+      const e = titleElig(v);
+      if (e === 'Ineligible') { if (!norm(v.t_applied)) p.t_applied = date; } else if (!e) p.t_elig = 'Eligible';
+    }
+    if (mode === 'shipped') { p.exit_reason = 'Shipped'; p.exit_date = date; }
+    return p;
+  }
+  function bulkStatusDrawer(d) {
+    if (!d.init) { d.init = true; d.sel = new Set(); d.out = 'ready'; d.date = TODAY_ISO; d.q = ''; d.sort = ['purchased', 'asc']; d.fc = ''; d.fs = ''; d.ff = ''; d.from = ''; d.to = ''; }
+    if (!S.canAdmin) return shell('Bulk status', [h('p', { class: 'vt-note', text: 'Only an Owner can bypass towing, title and shipping.' })], null);
+    const BS_COLS = [['vin', 'VIN', (v) => v.vin], ['lot', 'Lot #', (v) => v.tw_lot], ['vehicle', 'Vehicle', (v) => v.vehicle], ['customer', 'Customer', (v) => vehCustomer(v)],
+      ['shipper', 'Loader', (v) => v.shipper], ['purchased', 'Purchased', (v) => v.purchased], ['flow', 'Now', (v) => String(CAR_FLOW.findIndex((x) => x.id === carFlow(v)))]];
+    const [sk, sd] = d.sort; const sval = (BS_COLS.find((c) => c[0] === sk) || BS_COLS[5])[2];
+    const cmp = (a, b) => { const x = norm(sval(a)), y = norm(sval(b)); if (!x && y) return 1; if (x && !y) return -1; const r = x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' }); return (sd === 'desc' ? -r : r) || String(a.vin).localeCompare(String(b.vin)); };
+    // on hand and not in a container; "Ready to load" hides cars that already are
+    const cars = [...S.veh.values()].filter((v) => isOnHand(v) && !v.container && (d.out === 'shipped' || carFlow(v) !== 'ready')).sort(cmp);
+    const inList = new Set(cars.map((v) => v.vin)); for (const vin of [...d.sel]) if (!inList.has(vin)) d.sel.delete(vin);
+    const sortTh = ([key, label]) => h('th', { 'aria-sort': sk === key ? (sd === 'asc' ? 'ascending' : 'descending') : 'none', tabindex: '0', title: 'Sort by ' + label,
+      onclick: () => { d.sort = [key, sk === key && sd === 'asc' ? 'desc' : 'asc']; redrawDrawer(); },
+      onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } } }, label);
+    const verb = d.out === 'shipped' ? 'Mark delivered' : 'Mark ready to load';
+    const count = h('b', { text: '0' });
+    const go = h('button', { class: 'vt-btn is-primary', type: 'button', disabled: true }, verb);
+    const sync = () => {
+      const n = d.sel.size; count.textContent = fmtN(n);
+      if (!d.confirm) { go.disabled = !n || d.busy; go.textContent = n ? `${verb}: ${fmtN(n)} car${n === 1 ? '' : 's'}` : verb; }
+      if (all) { const vis = rowEls.filter((r) => !r.tr.hidden); all.checked = vis.length > 0 && vis.every((r) => d.sel.has(r.vin)); all.indeterminate = !all.checked && vis.some((r) => d.sel.has(r.vin)); }
+    };
+    const flowPill = (v) => { const f = CAR_FLOW.find((x) => x.id === carFlow(v)) || CAR_FLOW[0]; return statusPill(f.label, f.color); };
+    const rowEls = cars.map((v) => {
+      const cb = h('input', { type: 'checkbox', 'aria-label': `Select ${v.vin}`, onchange: (e) => { if (e.target.checked) d.sel.add(v.vin); else d.sel.delete(v.vin); d.confirm = false; sync(); } });
+      cb.checked = d.sel.has(v.vin);
+      const hay = [v.vin, v.vehicle, v.buyer, v.tw_lot, v.shipper, vehCustomer(v)].map((x) => norm(x).toLowerCase()).join(' ');
+      const tr = h('tr', { onclick: (e) => { if (e.target.tagName !== 'INPUT') { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } } },
+        h('td', null, cb), h('td', { class: 'mono', text: v.vin }), h('td', { class: 'mono', text: v.tw_lot || '' }), h('td', { text: v.vehicle || '' }), h('td', { text: vehCustomer(v) }),
+        h('td', { text: v.shipper || '' }), h('td', { text: v.purchased ? fmtD(v.purchased) : '' }), h('td', null, flowPill(v)));
+      return { vin: v.vin, tr, hay, cus: cusIdOf(v) || '', ship: v.shipper || '', flow: carFlow(v), pur: v.purchased || '' };
+    });
+    const all = rowEls.length ? h('input', { type: 'checkbox', 'aria-label': 'Select all shown', onchange: (e) => { for (const r of rowEls) if (!r.tr.hidden) { if (e.target.checked) d.sel.add(r.vin); else d.sel.delete(r.vin); r.tr.querySelector('input[type=checkbox]').checked = e.target.checked; } d.confirm = false; sync(); } }) : null;
+    const shownEl = h('span');
+    const filter = () => {
+      const q = norm(d.q).toLowerCase();
+      for (const r of rowEls) r.tr.hidden = (!!q && !r.hay.includes(q)) || (!!d.fc && r.cus !== d.fc) || (!!d.fs && r.ship !== d.fs) || (!!d.ff && r.flow !== d.ff)
+        || (!!d.from && (!r.pur || r.pur < d.from)) || (!!d.to && (!r.pur || r.pur > d.to));
+      shownEl.textContent = `${fmtN(rowEls.filter((r) => !r.tr.hidden).length)} shown · `;
+      sync();
+    };
+    const optsOf = (get, label) => [...new Map(cars.map((v) => [get(v), label(v)]).filter(([k]) => k)).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+      .map(([k, l]) => [k, `${l} (${fmtN(cars.filter((v) => get(v) === k).length)})`]);
+    const fsel = (label, key, opts, allL) => h('label', { class: 'vt-f' }, h('span', { text: label }), select(opts, d[key], (v) => { d[key] = v; filter(); }, label, allL));
+    const fdate = (label, key) => h('label', { class: 'vt-f' }, h('span', { text: label }), h('input', { type: 'date', value: d[key], 'aria-label': label, onchange: (e) => { d[key] = e.target.value; filter(); } }));
+    const clearF = () => { d.q = ''; d.fc = ''; d.fs = ''; d.ff = ''; d.from = ''; d.to = ''; redrawDrawer(); };
+    const run = async () => {
+      if (!d.sel.size || d.busy) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) return setMsg(d, 'Enter the date.', true, { bs_date: 'Required' });
+      // two clicks: the first one asks to confirm
+      if (!d.confirm) { d.confirm = true; go.textContent = `Confirm: ${verb.toLowerCase()} for ${fmtN(d.sel.size)} car${d.sel.size === 1 ? '' : 's'}`; go.classList.add('is-danger', 'is-armed'); return; }
+      d.busy = true; go.disabled = true;
+      const vins = [...d.sel]; let ok = 0; const bad = [];
+      for (const vin of vins) {
+        const v = S.veh.get(vin); if (!v) { bad.push(`${vin}: not found`); continue; }
+        const p = bypassPatch(v, d.out, d.date);
+        try {
+          if (Object.keys(p).length) await write(() => coll('veh').doc(vin).update({ ...p, updatedAt: stamp() }));
+          ok++; d.sel.delete(vin);
+        } catch (e) { bad.push(`${vin}: ${errText(e)}`); }
+        go.textContent = `Saving… ${fmtN(ok + bad.length)} of ${fmtN(vins.length)}`;
+        await sleep(30);
+      }
+      d.busy = false; d.confirm = false;
+      if (bad.length) { setMsg(d, `${fmtN(ok)} saved, ${fmtN(bad.length)} not saved: ${bad.slice(0, 3).join('; ')}${bad.length > 3 ? '…' : ''}`, true); redrawDrawer(); }
+      else { toast(d.out === 'shipped' ? `${fmtN(ok)} car${ok === 1 ? '' : 's'} marked delivered (shipped, no container)` : `${fmtN(ok)} car${ok === 1 ? '' : 's'} now ready to load`); closeDrawer(); }
+    };
+    go.onclick = run;
+    const search = h('input', { type: 'search', value: d.q, placeholder: 'VIN, vehicle, customer, loader, lot', 'aria-label': 'Search cars', oninput: (e) => { d.q = e.target.value; filter(); } });
+    const MODES = [['ready', 'Ready to load'], ['shipped', 'Delivered (shipped without a container)']];
+    const body = [
+      h('p', { class: 'vt-note', text: 'Owner bypass. Pick cars and an outcome. Towing and title steps that are not done yet are filled in with the date below (delivered to the yard; title received at the yard, VIN OK), so the cars leave the Towing and Titles lists. A carrier that is still unpaid stays on "Delivered · carrier not paid" for AP. Every change shows in the car\'s History with your name.' }),
+      h('div', { class: 'vt-form' },
+        h('label', null, 'Mark the cars as *', select(MODES, d.out, (v) => { d.out = v; d.confirm = false; redrawDrawer(); }, 'Outcome', null)),
+        h('label', { 'data-key': 'bs_date' }, d.out === 'shipped' ? 'Shipped / delivered on *' : 'Date *', h('input', { type: 'date', value: d.date, 'aria-label': 'Date', onchange: (e) => { d.date = e.target.value; } }))),
+      d.out === 'shipped' ? h('p', { class: 'vt-note', text: 'Delivered = already shipped to destination without a container in this tracker. The cars get exit reason "Shipped" and leave the on-hand lists and boards. To undo one, open the car and use "Put back in the warehouse".' }) : null,
+      cars.length ? h('div', { class: 'vt-tools is-open' },
+        h('label', { class: 'vt-f is-wide' }, h('span', { text: 'Search' }), search),
+        fsel('Customer', 'fc', optsOf((v) => cusIdOf(v), (v) => vehCustomer(v)), 'All customers'),
+        fsel('Loader', 'fs', optsOf((v) => v.shipper, (v) => v.shipper), 'All loaders'),
+        fsel('Now', 'ff', CAR_FLOW.filter((x) => cars.some((v) => carFlow(v) === x.id)).map((x) => [x.id, `${x.label} (${fmtN(cars.filter((v) => carFlow(v) === x.id).length)})`]), 'Any stage'),
+        fdate('Purchased from', 'from'), fdate('Purchased to', 'to'),
+        h('button', { class: 'vt-btn vt-clear', type: 'button', onclick: clearF }, 'Clear filters'),
+        h('span', { class: 'vt-spacer' }), h('span', { class: 'vt-count' }, shownEl, count, ` of ${fmtN(cars.length)} selected`)) : null,
+      cars.length ? h('div', { class: 'vt-tablebox' }, h('table', { class: 'vt-table vt-bulkpay' },
+        h('thead', null, h('tr', null, h('th', null, all), ...BS_COLS.map(sortTh))),
+        h('tbody', null, rowEls.map((r) => r.tr))))
+        : h('div', { class: 'vt-empty' }, h('b', { text: 'No cars to mark' }), h('p', { text: d.out === 'ready' ? 'Every on-hand car outside a container is already ready to load.' : 'No on-hand cars outside a container.' })),
+      msgEl(d),
+    ];
+    setTimeout(() => { filter(); }, 0);
+    return shell('Bulk status: owner bypass', body, [h('button', { class: 'vt-btn', type: 'button', onclick: () => { if (!d.busy) closeDrawer(); } }, 'Cancel'), go], 'xl');
   }
   function towDrawer(d) {
     const rec = d.id ? (S.veh.get(d.id) || (d.form && d.form.id === d.id ? { ...d.form } : null)) : null;
