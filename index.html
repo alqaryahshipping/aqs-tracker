@@ -2485,7 +2485,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const need = (k, lbl) => { if (!norm(v[k])) m.push(lbl); };
     if (!v.tw_src && !atYard) { need('buyer', 'buyer account'); need('tw_lot', 'lot / order ID'); }
     need('customer_id', 'customer');
-    if (['assigned', 'picked', 'delivered', 'paid'].includes(st) && !self) { if (!v.tw_src) need('tw_paid', 'auction paid date'); need('tw_carrier', 'carrier'); }
+    // tw_src: towing closed outside the normal steps (legacy import or a bulk close): no paid date / carrier / pickup to chase
+    if (['assigned', 'picked', 'delivered', 'paid'].includes(st) && !self && !v.tw_src) { need('tw_paid', 'auction paid date'); need('tw_carrier', 'carrier'); }
     if (['posted', 'assigned', 'picked', 'delivered', 'paid', 'closed'].includes(st) || atYard) { need('shipper', 'loader'); need('yard', 'loading yard'); }
     if (['delivered', 'paid'].includes(st) && !self && !v.tw_src) need('tw_picked', 'pickup date');
     return m;
