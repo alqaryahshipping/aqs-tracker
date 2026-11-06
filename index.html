@@ -2674,11 +2674,11 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       { key: 't_type', label: 'Title type', render: (r) => { const e = titleElig(r); return h('span', null, r.t_type || h('span', { class: 'vt-muted', text: 'not recorded' }), e ? h('span', { class: 'vt-tag ' + (e === 'Eligible' ? 'vt-tag-ok' : 'vt-tag-bad'), text: e === 'Eligible' ? 'export ok' : 'no export' }) : null); } },
       { key: 'loc', label: 'Title status (where)', render: (r) => titleLocRaw(r) ? locLabel(titleLocRaw(r)) : h('span', { class: 'vt-muted', text: 'not recorded' }) },
       { key: 'stage', label: 'Title stage', render: (r) => titlePill(r) },
-      { key: 'next', label: 'Next action', render: (r) => { const n = titleNext(r); return h('span', { class: n.lvl === 'bad' ? 'vt-next is-bad' : n.lvl === 'ok' ? 'vt-next is-ok' : 'vt-next', text: n.text }); } },
+      { key: 't_remarks', label: 'Remarks', head: h('span', { class: 'vt-rmk-h', title: 'Title remarks', 'aria-label': 'Title remarks' }, RMK_SVG()), render: (r) => { const t = norm(r.t_remarks); return t ? h('span', { class: 'vt-rmk', tabindex: '0', 'aria-label': `Remarks: ${t}`, 'data-tip': t.length > 240 ? t.slice(0, 240) + '…' : t }, RMK_SVG()) : ''; } },
       { key: 't_track', label: 'Tracking', mono: true },
       { key: 't_state', label: 'State' },
       { key: 't_recv', label: 'Received', render: (r) => fmtD(r.t_recv) },
-      { key: 't_remarks', label: 'Remarks', head: h('span', { class: 'vt-rmk-h', title: 'Title remarks', 'aria-label': 'Title remarks' }, RMK_SVG()), render: (r) => { const t = norm(r.t_remarks); return t ? h('span', { class: 'vt-rmk', tabindex: '0', 'aria-label': `Remarks: ${t}`, 'data-tip': t.length > 240 ? t.slice(0, 240) + '…' : t }, RMK_SVG()) : ''; } },
+      { key: 'next', label: 'Next action', render: (r) => { const n = titleNext(r); return h('span', { class: n.lvl === 'bad' ? 'vt-next is-bad' : n.lvl === 'ok' ? 'vt-next is-ok' : 'vt-next', text: n.text }); } },
     ];
     return [h('div', { class: 'vt-card-box' },
       h('div', { class: 'vt-pagehead' }, h('div', null, h('h2', { text: 'Title management' }), h('p', { class: 'vt-note', text: 'Every car must have its title checked for export eligibility on the day it is added, and the title must reach its loading yard before loading (SOP F02). Record the title type (its export eligibility comes from the Title types master in Settings) and the title status: where the title is right now. Cars can be loaded once the title is eligible and "At the loading yard" or "With the car". Day clock = days since the car arrived at the yard: day 10 notify the customer, day 14 apply for a new title, day 15 storage starts (top customers and internal cars exempt).' }))),
