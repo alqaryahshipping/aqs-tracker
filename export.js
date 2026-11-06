@@ -324,7 +324,7 @@
     const cols = [
       ['Loaders', L.shippers || []], ['Customers', customers || []], ['Electric', ['Yes']], ['Pickup status', L.vStatus || []],
       ['Voyage', voyages || []], ['Clearance', L.clearance || []], ['Auction accounts', L.auctions || []], ['Size', L.sizes || []], ['Loading yard', L.origins || []],
-      ['Title type', L.titleTypes || []], ['Title status', L.titleLocs || []], ['Yes / No', ['Yes', 'No']], ['Eligibility', ['Eligible', 'Ineligible']], ['Approval', ['Requested', 'Approved', 'Rejected']],
+      ['Title type', L.titleTypes || []], ['Title status', L.titleLocs || []], ['Yes / No', ['Yes', 'No']], ['Eligibility', ['Eligible', 'Ineligible']], ['Approval', ['Requested', 'Approved', 'Rejected']], ['Load', ['Full', 'Mix', 'Group']],
     ];
     const ref = {};
     cols.forEach(([name, vals], i) => { const letter = String.fromCharCode(65 + i); ref[name] = `Lists!$${letter}$2:$${letter}$${Math.max(2, vals.length + 1)}`; });
@@ -360,10 +360,11 @@
       { h: 'Remarks', w: 36 },
     ]);
     sheet('Containers', [
-      { h: 'Container', w: 16, req: true, fmt: '@', note: 'Required. Container number. Rows are matched on it: new numbers are added, existing ones updated.' },
+      { h: 'Container', w: 16, req: true, fmt: '@', note: 'Required. Container number, 4 letters + 7 digits (e.g. MSKU1234565); the check digit is verified. Rows are matched on it: new numbers are added; existing ones are updated only when "Update existing containers" is ticked.' },
       { h: 'Loader', w: 16, req: true, list: 'Loaders', note: 'Required for new containers.' },
-      { h: 'Customer', w: 26, req: true, list: 'Customers', strict: true, note: 'Required for new containers. Must exist in the tracker.' },
-      { h: 'Voyage', w: 44, req: true, list: 'Voyage', strict: true, note: 'Required for new containers. Must be an existing voyage (create it on the Voyages tab first).' },
+      { h: 'Full / Mix / Group', w: 14, req: true, list: 'Load', strict: true, note: 'Required for new containers. Full = one customer; Mix = several customers, consignee is a group company; Group = group companies only.' },
+      { h: 'Customer (consignee)', w: 26, req: true, list: 'Customers', strict: true, note: 'Required for new containers. Must exist in the tracker. Mix and Group: must be a group company.' },
+      { h: 'Voyage', w: 44, req: true, list: 'Voyage', note: 'Required for new containers. An existing voyage: pick from the list, or type vessel + voyage no. (e.g. TEMA MAERSK 644E) or the voyage no. alone when it is unique.' },
       { h: 'Booking', w: 16, fmt: '@' },
       { h: 'Size', w: 10, list: 'Size' },
       { h: 'Clearance', w: 16, list: 'Clearance' },
@@ -382,11 +383,11 @@
       [''],
       ['How to use', { bold: true }],
       ['1. Fill the Vehicles sheet and/or the Containers sheet. Keep the header row as it is. Dark header = required for new records.'],
-      ['2. In the tracker, open Vehicles (On hand) or Containers and click "Import Excel". Upload this file. It reads the matching sheet.'],
-      ['3. Check the preview (new / to update / problems), then click Apply changes.'],
+      ['2. In the tracker, open Vehicles (On hand) or Containers, click "Bulk entry / Import", then "Upload Excel / CSV". It reads the matching sheet.'],
+      ['3. Check the grid (each row shows New / Update or what to fix), then click Save rows.'],
       [''],
       ['Rules', { bold: true }],
-      ['• Rows are matched on VIN (vehicles) or container number (containers). New ones are added, existing ones are updated.'],
+      ['• Rows are matched on VIN (vehicles) or container number (containers). New ones are added. Existing cars are not changed by import; existing containers are updated only when "Update existing containers" is ticked.'],
       ['• Empty cells leave the current value unchanged. Nothing is ever deleted by an import.'],
       ['• Customer and Voyage must already exist in the tracker. Buyer, loader, size and clearance should come from the dropdowns.'],
       ['• Vehicles: only the auction details are imported. Towing (payment, dispatch, loader, delivery), titles and loading are done on their own screens in the tracker.'],

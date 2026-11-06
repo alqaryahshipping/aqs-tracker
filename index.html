@@ -1156,6 +1156,13 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   }
   const vehCustomer = (v) => (v ? cusName(v.customer_id) || (v.container ? (S.con.get(v.container) || {}).customer || '' : '') : '');
   const consOf = (cid) => [...S.con.values()].filter((c) => c.customer_id === cid);
+  // ISO 6346: 3-letter owner code + U/J/Z + 6 digits + check digit
+  const conNoIssue = (id) => {
+    if (!/^[A-Z]{3}[UJZ]\d{7}$/.test(id)) return 'should be 4 letters + 7 digits (owner code, U, serial, check digit), e.g. MSKU1234565';
+    const val = (ch) => { if (/\d/.test(ch)) return +ch; let v = 10; for (let c = 65; c < ch.charCodeAt(0); c++) { v++; if (v % 11 === 0) v++; } return v; };
+    let sum = 0; for (let i = 0; i < 10; i++) sum += val(id[i]) * 2 ** i;
+    const cd = (sum % 11) % 10; return cd === +id[10] ? '' : `check digit is wrong (last digit should be ${cd}): probably a typo`;
+  };
   const cleanId = (s) => norm(s).toUpperCase().replace(/[^A-Z0-9_\-.~:@+]/g, '');
   const stamp = () => new Date().toISOString();
   // a voyage is a duplicate when the same shipping line already has the same voyage number
@@ -3727,7 +3734,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   // What in this drawer differs from the saved record (or from a blank new form)?
   function draftDiff(d) {
     if (!d || !S.canWrite) return null;
-    if (d.mode === 'paste') return d.grid && d.grid.some((r) => r.some((x) => norm(x) !== '')) ? { grid: d.grid.filter((r) => r.some((x) => norm(x) !== '')) } : null;
+    if (d.mode === 'paste') return d.grid && d.grid.some((r) => r.some((x) => norm(x) !== '')) ? { grid: d.grid.filter((r) => r.some((x) => norm(x) !== '')), cols: gridCols(d.kind).map((c) => c.k) } : null;
     if (d.mode !== 'edit' || !d.form || !DRAFT_FIELDS()[d.kind]) return null;
     const rec = recOf(d.kind, d.id);
     if (d.id && !rec) return null;
@@ -3760,7 +3767,11 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   function restoreDraft(d) {
     if (d.draftChecked) return; d.draftChecked = true;
     const dr = drafts[draftKey(d)]; if (!dr || !S.canWrite) return;
-    if (d.mode === 'paste') { if (dr.grid && dr.grid.length) { d.grid = dr.grid.map((r) => r.slice()); while (d.grid.length < GRID_START) d.grid.push(d.grid[0].map(() => '')); d.rowErr = {}; d.draftAt = dr.at; } return; }
+    if (d.mode === 'paste') { if (dr.grid && dr.grid.length) {
+      // drafts keep their column names, so a grid that gained a column still restores into the right cells
+      const keys = gridCols(d.kind).map((c) => c.k);
+      const from = dr.cols || (d.kind === 'con' && dr.grid[0].length === 8 ? ['container', 'shipper', 'customer', 'voyage', 'booking', 'size', 'clearance', 'notes'] : keys);
+      d.grid = dr.grid.map((r) => keys.map((k) => { const ix = from.indexOf(k); return ix >= 0 ? (r[ix] ?? '') : ''; })); while (d.grid.length < GRID_START) d.grid.push(d.grid[0].map(() => '')); d.rowErr = {}; d.draftAt = dr.at; } return; }
     const rec = recOf(d.kind, d.id);
     if (d.id && !rec) return;
     const base = rec ? (d.kind === 'con' ? { ...S.conRaw.get(rec.id) } : { ...rec }) : ({ veh: { tw_case: 'AQS account' }, voy: { status: 'Planned' }, rate: { month: S.rf.month || THIS_MONTH } }[d.kind] || {});
@@ -4723,6 +4734,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       if (isNew) {
         const id = data.container;
         if (!id) return setMsg(d, 'Container no.: enter the container number.', true, { container: 'Enter the container number' });
+        { const bad = conNoIssue(id); if (bad) return setMsg(d, `Container no. ${id}: ${bad}.`, true, { container: bad }); }
         if (S.conRaw.has(id)) return setMsg(d, `Container no.: ${id} already exists. Search for it and edit that record instead.`, true, { container: 'Already in the tracker' });
         const picks = d.pk ? [...d.pk.sel] : [];
         try {
@@ -4937,7 +4949,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     't_vin_ok': 't_vin_ok', 'vin on title matches': 't_vin_ok', 'vin match': 't_vin_ok', 't_elig': 't_elig', 'export eligibility (if no type)': 't_elig', 'export eligibility': 't_elig',
     't_appr': 't_appr', 'new title approval': 't_appr', 't_supplier': 't_supplier', 'title supplier': 't_supplier', 't_applied': 't_applied', 'new title applied on': 't_applied', 'new title applied': 't_applied',
     'vin': 'vin', 'vehicle': 'vehicle', 'shipper': 'shipper', 'price': 'price', 'arrived': 'arrived', 'title': 'title', 'status': 'status', 'buyer': 'buyer', 'remarks': 'remarks', 'no': 'no',
-    'container': 'container', 'container no': 'container', 'container no.': 'container', 'booking': 'booking', 'clearance': 'clearance', 'release': 'release', 'consignee': 'customer', 'customer': 'customer', 'notes': 'notes', 'buyer / auction': 'buyer',
+    'container': 'container', 'container no': 'container', 'container no.': 'container', 'booking': 'booking', 'clearance': 'clearance', 'release': 'release', 'consignee': 'customer', 'load': 'load', 'full / mix / group': 'load', 'full or mix': 'load', 'full/mix/group': 'load', 'container type': 'load', 'load type': 'load', 'customer': 'customer', 'notes': 'notes', 'buyer / auction': 'buyer',
     'voyage': 'voyage', 'voyage_id': 'voyage', 'voyage id': 'voyage', 'vehicle (year make model)': 'vehicle', 'purchase price': 'price', 'arrived at warehouse': 'arrived', 'container number': 'container', 'booking no': 'booking', 'booking no.': 'booking', 'size': 'size', 'container size': 'size', 'yard': 'yard', 'loading yard': 'yard', 'loader': 'shipper', 'electric': 'electric', 'electric (yes)': 'electric' };
   const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
   function toIso(s) {
@@ -4948,15 +4960,17 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     if (/^\d{5}$/.test(s)) return iso(Date.UTC(1899, 11, 30) + Number(s) * DAY);
     return 'BAD';
   }
-  function findVoyage(s) {
-    const t = norm(s).toLowerCase(); if (!t) return null;
-    for (const y of S.voy.values()) {
-      if (y.id.toLowerCase() === t || voyLabel(y).toLowerCase() === t) return y.id;
-      const vv = [y.vessel, y.voyage_no].filter(Boolean).join(' / ').toLowerCase();
-      if (vv && (vv === t || [y.vessel, y.voyage_no].filter(Boolean).join(' ').toLowerCase() === t)) return y.id;
-    }
-    return null;
+  // a voyage can be written as its ID, its label, "vessel voyage no." (any separators) or just the voyage no. when that is unique
+  function voyMatches(s) {
+    const t = norm(s).toLowerCase(); if (!t) return [];
+    const ys = [...S.voy.values()];
+    const exact = ys.filter((y) => y.id.toLowerCase() === t || voyLabel(y).toLowerCase() === t); if (exact.length) return exact;
+    const k = t.replace(/[^a-z0-9]/g, ''); if (!k) return [];
+    const kk = (...x) => x.filter(Boolean).join('').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const both = ys.filter((y) => y.voyage_no && (kk(y.vessel, y.voyage_no) === k || kk(y.line, y.voyage_no) === k)); if (both.length) return both;
+    return ys.filter((y) => y.voyage_no && kk(y.voyage_no) === k);
   }
+  function findVoyage(s) { const m = voyMatches(s); return m.length === 1 ? m[0].id : null; }
   function parsePaste(kind, text) {
     const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.trim());
     if (lines.length < 2) return { error: 'Paste a header row and at least one data row.' };
@@ -4965,7 +4979,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const isV = kind === 'veh';
     const idKey = isV ? 'vin' : 'container';
     if (!head.includes(idKey)) return { error: `The header row needs a "${idKey}" column. Copy the header row from the Excel export.` };
-    const fields = new Set(isV ? VEH_FIELDS.map((f) => f.key).concat('customer', 'yard', 'tw_lot', 'tw_gate', 'tw_pickup', TITLE_FIELDS.map((f) => f.key)) : CON_FIELDS.map((f) => f.key).concat('voyage', 'customer'));
+    const fields = new Set(isV ? VEH_FIELDS.map((f) => f.key).concat('customer', 'yard', 'tw_lot', 'tw_gate', 'tw_pickup', TITLE_FIELDS.map((f) => f.key)) : CON_FIELDS.map((f) => f.key).concat('voyage', 'customer', 'load'));
     const ignored = isV && head.includes('container');
     const map = isV ? S.veh : S.conRaw;
     const plan = { add: [], update: [], same: 0, errors: [] };
@@ -4998,7 +5012,9 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
         if ((rec.t_type || rec.t_elig) && !(map.get(cleanId(rec.vin)) || {}).t_checked) rec.t_checked = TODAY_ISO;
       }
       for (const k of ['price']) if (rec[k] != null) { const n = Number(String(rec[k]).replace(/[, ]/g, '')); if (isNaN(n)) { plan.errors.push(`Row ${i + 2}: ${k} "${rec[k]}" is not a number`); delete rec[k]; } else rec[k] = n; }
-      if (!isV && rec.voyage != null) { const vid = findVoyage(rec.voyage); if (!vid) { plan.errors.push(`Row ${i + 2}: voyage "${rec.voyage}" not found`); delete rec.voyage; } else { rec.voyage_id = vid; delete rec.voyage; } }
+      if (!isV && rec.voyage != null) { const m = voyMatches(rec.voyage); if (m.length !== 1) { plan.errors.push(`Row ${i + 2}: voyage "${rec.voyage}" ${m.length ? `matches ${m.length} voyages (${m.slice(0, 3).map(voyLabel).join('; ')}): write vessel + voyage no.` : 'not found (add it on the Voyages tab first)'}`); delete rec.voyage; } else { rec.voyage_id = m[0].id; delete rec.voyage; } }
+      if (!isV && rec.load != null) { const l = ['Full', 'Mix', 'Group'].find((x) => x.toLowerCase() === rec.load.toLowerCase()); if (l) rec.load = l; else { plan.errors.push(`Row ${i + 2}: Full / Mix / Group "${rec.load}" should be Full, Mix or Group`); delete rec.load; } }
+      if (!isV && !map.get(id)) { const bad = conNoIssue(id); if (bad) { plan.errors.push(`Row ${i + 2}: container no. ${id} ${bad}`); return; } }
       if (rec.customer != null) { const nm = norm(rec.customer).toLowerCase(); const cu = [...S.cus.values()].find((c) => norm(c.name).toLowerCase() === nm); if (!cu) { plan.errors.push(`Row ${i + 2}: customer "${rec.customer}" not found (add it on the Customers tab first)`); } else rec.customer_id = cu.id; delete rec.customer; }
       const cur = map.get(id);
       if (cur && (isV ? lockedVeh(cur) : lockedCon(S.con.get(id)))) { plan.errors.push(`Row ${i + 2}: ${id} is locked (arrived and cleared)`); return; }
@@ -5007,6 +5023,15 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       if (!cur && isV && !rec.customer_id) { plan.errors.push(`Row ${i + 2}: new car ${id} needs a customer that exists on the Customers tab`); return; }
       if (!cur && !isV && !rec.customer_id) { plan.errors.push(`Row ${i + 2}: new container ${id} needs a customer that already exists`); return; }
       if (!cur && !isV && !rec.voyage_id) { plan.errors.push(`Row ${i + 2}: new container ${id} needs a voyage that already exists`); return; }
+      if (!cur && !isV && !rec.load) { plan.errors.push(`Row ${i + 2}: new container ${id} needs Full, Mix or Group`); return; }
+      if (!isV && (rec.load || rec.customer_id)) {
+        // same rules as the container form: Mix / Group are consigned to a group company; Full holds one customer's cars
+        const load = rec.load || (cur && cur.load) || 'Full'; const cus = rec.customer_id || (cur && cur.customer_id); const cars = cur ? carsIn(id) : [];
+        if (load !== 'Full' && !groupCusIds().length) { plan.errors.push(`Row ${i + 2}: ${load} container needs a group company as consignee, but none is marked yet (Customers > "Group company (internal)" = Yes)`); return; }
+        if (load !== 'Full' && !isGroupCus(cus)) { plan.errors.push(`Row ${i + 2}: ${load} container: consignee ${cusName(cus) || 'not set'} is not a group company`); return; }
+        if (load === 'Group') { const out = cars.filter((v) => !isGroupCus(v.customer_id)); if (out.length) { plan.errors.push(`Row ${i + 2}: Group container holds ${out.length} car(s) of non-group customers (${out.slice(0, 2).map((v) => v.vin).join(', ')}): use Mix`); return; } }
+        if (load === 'Full' && cus && cus !== UNASSIGNED) { const out = cars.filter((v) => v.customer_id && v.customer_id !== cus); if (out.length) { plan.errors.push(`Row ${i + 2}: Full container holds ${out.length} car(s) of other customers (${out.slice(0, 2).map((v) => v.vin).join(', ')}): use Mix`); return; } }
+      }
       if (!cur) plan.add.push(isV ? { tw_case: 'AQS account', ...rec, container: null, exit_date: null, exit_reason: null } : rec);
       else {
         const patch = {}; for (const [k, v] of Object.entries(rec)) if (k !== idKey && String(cur[k] ?? '') !== String(v)) patch[k] = v;
@@ -5086,7 +5111,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   }
   // Spreadsheet-style entry grid (also fed by Excel upload and paste).
   function gridCols(kind) {
-    const voys = () => [...S.voy.values()].filter((y) => !lockedVoy(y)).sort((a, b) => String(b.eta || '').localeCompare(String(a.eta || ''))).map(voyLabel);
+    const voys = () => [...S.voy.values()].sort((a, b) => String(b.eta || '').localeCompare(String(a.eta || ''))).map(voyLabel);
     const cus = () => cusOpts(false).map((x) => x[1]);
     return kind === 'veh' ? [
       { k: 'vin', h: 'VIN', req: true, w: 13, mono: true, up: true },
@@ -5103,7 +5128,8 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     ] : [
       { k: 'container', h: 'Container', req: true, w: 9, mono: true, up: true },
       { k: 'shipper', h: 'Loader', req: true, w: 8, list: () => L('shippers') },
-      { k: 'customer', h: 'Customer', req: true, w: 13, list: cus },
+      { k: 'load', h: 'Full / Mix / Group', req: true, w: 8, list: () => ['Full', 'Mix', 'Group'] },
+      { k: 'customer', h: 'Customer (consignee)', req: true, w: 13, list: cus },
       { k: 'voyage', h: 'Voyage', req: true, w: 18, list: voys },
       { k: 'booking', h: 'Booking', w: 8, mono: true },
       { k: 'size', h: 'Size', w: 5, list: () => L('sizes') },
@@ -5113,7 +5139,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
   }
   const GRID_START = 15;
   // ---- cell validation against master lists
-  const GRID_MASTER = { tw_pickup: 'Pickup locations (Towing > Pickup locations)', shipper: 'Partners (loaders) in Settings', customer: 'Customers', yard: 'Origins in Settings', status: 'Vehicle statuses in Settings', buyer: 'Auction accounts in Settings', t_type: 'Title types in Settings', t_loc: 'title statuses', electric: 'Yes / No', t_vin_ok: 'Yes / No', t_elig: 'Eligible / Ineligible', t_appr: 'Requested / Approved / Rejected', voyage: 'Voyages (open ones)', size: 'Container sizes in Settings', clearance: 'Clearance stages in Settings' };
+  const GRID_MASTER = { tw_pickup: 'Pickup locations (Towing > Pickup locations)', shipper: 'Partners (loaders) in Settings', customer: 'Customers', yard: 'Origins in Settings', status: 'Vehicle statuses in Settings', buyer: 'Auction accounts in Settings', t_type: 'Title types in Settings', t_loc: 'title statuses', electric: 'Yes / No', t_vin_ok: 'Yes / No', t_elig: 'Eligible / Ineligible', t_appr: 'Requested / Approved / Rejected', voyage: 'Voyages', load: 'Full / Mix / Group', size: 'Container sizes in Settings', clearance: 'Clearance stages in Settings' };
   const nkey = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   function lev(a, b) { if (a === b) return 0; const m = a.length, n = b.length; if (!m || !n) return m + n; let prev = Array.from({ length: n + 1 }, (_, j) => j); for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; } return prev[n]; }
   function closest(list, v) {
@@ -5128,7 +5154,7 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
     const v = norm(val); if (!v || !c.list) return null;
     const master = GRID_MASTER[c.k] || 'the list';
     if (c.k === 'buyer') { const cb = canonBuyer(v); if (L('auctions').includes(cb)) return cb === v ? null : { msg: `"${v}" → use "${cb}"`, fix: cb }; const s2 = closest(L('auctions'), v); return { msg: `"${v}" is not in ${master}`, fix: s2 }; }
-    if (c.k === 'voyage') { if (findVoyage(v)) return null; const s2 = closest(c.list(), v); return { msg: `voyage "${v}" not found in ${master}`, fix: s2 }; }
+    if (c.k === 'voyage') { const m = voyMatches(v); if (m.length === 1) return null; if (m.length > 1) return { msg: `voyage "${v}" matches ${m.length} voyages: pick the right one`, fix: null }; const s2 = closest(c.list(), v); return { msg: `voyage "${v}" not found in ${master}${s2 ? '' : ' (add it on the Voyages tab first)'}`, fix: s2 }; }
     const list = c.list();
     if (list.includes(v)) {
       if (c.k === 'yard') { const ld = row.shipper; const ls = loaderLocs(ld); if (ld && ls.length && !ls.includes(v)) return { msg: `${ld} has no location "${v}" (has: ${ls.join(', ')})`, fix: ls.length === 1 ? ls[0] : null }; }
@@ -5433,12 +5459,14 @@ body.vt-locked #app, body.vt-locked .vt-mnav, body.vt-locked .vt-drawer, body.vt
       h('button', { class: 'vt-btn', type: 'button', onclick: () => addRows(10) }, '+ 10 rows'),
       h('span', { id: 'vt-selinfo', class: 'vt-selinfo', 'aria-live': 'polite' }),
       h('button', { class: 'vt-btn', type: 'button', onclick: () => { if (d.busy) return; if (d.grid.some(filled) && !confirm('Clear all rows in the grid?')) return; d.grid = Array.from({ length: GRID_START }, blank); redrawRows(); check(); } }, 'Clear grid'),
+      // containers: existing numbers can be updated on purpose (cars stay add-only)
+      !isV ? h('label', { class: 'vt-bp-pay', title: 'Off: rows for containers already in the tracker are held back. On: they are updated; only the cells you fill change.' }, h('input', { type: 'checkbox', class: 'vt-check', checked: !!d.allowUpd, onchange: (e) => { d.allowUpd = e.target.checked; check(); } }), h('span', { text: 'Update existing containers' })) : null,
       h('span', { class: 'vt-spacer' }), upBtn, tplBtn, fileIn, fileName);
     zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('is-over'); });
     zone.addEventListener('dragleave', () => zone.classList.remove('is-over'));
     zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('is-over'); load(e.dataTransfer.files[0]); });
     setTimeout(() => { paintErrors(); if (d.grid.some(filled)) check(); else show(); }, 0);
-    const intro = h('p', { class: 'vt-note', text: `${isV ? 'New cars need only the auction details (VIN, Lot #, Buyer, Customer *). Towing, title and loading are done on their own screens. ' : ''}Fill the grid like a spreadsheet: Tab / arrows move between cells, Enter goes down, Ctrl+D copies the cell above, and you can paste a block straight from Excel (with or without the header row). Rows are matched on ${isV ? 'VIN' : 'container number'}: new ones are added, existing ones updated, empty cells keep the current value. * = required for new records.${isV ? ' New cars get the next running number.' : ' Customer and voyage must already exist.'} Unsaved rows are kept as a draft.` });
+    const intro = h('p', { class: 'vt-note', text: `${isV ? 'New cars need only the auction details (VIN, Lot #, Buyer, Customer *). Towing, title and loading are done on their own screens. ' : ''}Fill the grid like a spreadsheet: Tab / arrows move between cells, Enter goes down, Ctrl+D copies the cell above, and you can paste a block straight from Excel (with or without the header row). ${isV ? 'Rows are matched on VIN: new cars are added; a VIN already in the tracker is not added again. * = required. New cars get the next running number.' : 'Rows are matched on container number: new containers are added (* = required; the number is checked, e.g. MSKU1234565). Containers already in the tracker are held back unless you tick "Update existing containers": then only the cells you fill change. Customer and voyage must already exist; the voyage can be its no. (e.g. 644E), vessel + no., or the label from the list. Mix and Group containers are consigned to a group company.'} Unsaved rows are kept as a draft.` });
     const title = isV ? 'Bulk entry: vehicles' : 'Bulk entry: containers';
     if (d.page) {
       const back = () => { if (d.busy) return; go(S.bulkFrom && S.bulkFrom !== 'bulk' ? S.bulkFrom : (isV ? 'vehicles' : 'containers')); };
